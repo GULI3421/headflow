@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadType {
+  callback
+  calculator
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name_ru  String
+  name_ky  String
+  slug     String    @unique
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  title_ru       String
+  title_ky       String
+  description_ru String
+  description_ky String
+  price          Decimal  @db.Decimal(12, 2)
+  stock          Int      @default(0)
+  image_url      String?
+  specs          Json
+  categoryId     String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Lead {
+  id            String   @id @default(cuid())
+  customer_name String
+  phone         String
+  message       String?
+  type          LeadType
+  createdAt     DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+  @@map("leads")
+}

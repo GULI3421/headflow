@@ -1,0 +1,342 @@
+{
+  "common": {
+    "brand": "Heating Center",
+    "whatsapp": "WhatsApp"
+  },
+  "header": {
+    "nav": {
+      "boilers": "Boilers",
+      "radiators": "Radiators",
+      "underfloor": "Underfloor Heating",
+      "installation": "Installation"
+    },
+    "searchLabel": "Equipment search",
+    "searchPlaceholder": "Search equipment...",
+    "calculator": "Calculator",
+    "city": "Bishkek",
+    "cart": "Cart",
+    "openMenu": "Open menu",
+    "about": "About",
+    "contacts": "Contacts",
+    "downloadPrice": "Download price list",
+    "language": "Language"
+  },
+  "calculatorPage": {
+    "title": "Smart heating system calculation",
+    "description": "Enter your room parameters to estimate required boiler output and an approximate budget.",
+    "area": "Room area:",
+    "minArea": "20 m²",
+    "maxArea": "400 m²",
+    "houseType": "Housing type:",
+    "houseTypes": {
+      "apartment": { "title": "Apartment", "desc": "Minimal heat loss" },
+      "insulated": { "title": "Insulated house", "desc": "Medium heat loss" },
+      "uninsulated": { "title": "Cold house", "desc": "High heat loss (brick)" }
+    },
+    "ceiling": "Ceiling height:",
+    "ceilings": {
+      "standard": "Standard (up to 3m)",
+      "high": "High (over 3m)"
+    },
+    "recommendedPower": "Recommended boiler output:",
+    "materialBudget": "Estimated materials budget:",
+    "budgetNote": "* Includes an approximate cost of radiators, pipes, fittings, and related installation materials based on area (excluding boiler cost).",
+    "boilerCta": "Choose a boiler",
+    "radiatorCta": "Choose radiators"
+  },
+  "cartPage": {
+    "title": "Shopping cart",
+    "loading": "Loading cart...",
+    "empty": "Your cart is empty",
+    "backToCatalog": "Back to catalog",
+    "unitPrice": "{{price}} KGS each",
+    "summary": "Total",
+    "positions": "Items:",
+    "total": "Total cost:",
+    "contacts": "Contact details",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "phone": "Phone",
+    "phonePlaceholder": "+996",
+    "submit": "Place order",
+    "note": "The order will open in WhatsApp. No registration required.",
+    "fallbackProduct": "Product",
+    "whatsappMessage": "Hello! New order from Centr Otopleniya website:\n\nName: {{name}}\nPhone: {{phone}}\n\nItems:\n{{items}}\n\nTotal: {{total}} KGS",
+    "telegramType": "Order"
+  },
+  "installationPage": {
+    "eyebrow": "Turnkey installation",
+    "title": "Professional heating system installation in Bishkek",
+    "description": "We install boilers, radiators, underfloor heating, and pipe routing with warranty, clear estimates, and system startup.",
+    "request": "Leave a request",
+    "call": "Call a technician",
+    "benefits": ["Work warranty", "Material estimate before start", "System startup and testing"],
+    "servicesEyebrow": "What we install",
+    "servicesTitle": "Core installation services",
+    "services": {
+      "boilers": { "title": "Boiler installation", "description": "Gas, solid-fuel, and electric boilers with proper piping and connection." },
+      "radiators": { "title": "Radiator installation", "description": "Placement selection, neat mounting, connection, and leak testing." },
+      "floor": { "title": "Hydronic underfloor heating", "description": "Manifolds, pipes, loops, and adjustment for even room heating." },
+      "pipes": { "title": "Design and pipe routing", "description": "Clear layout, material estimate, and routing for your building specifics." }
+    },
+    "stepsEyebrow": "Process",
+    "stepsTitle": "How installation works",
+    "steps": ["Site visit and measurement", "Estimate calculation", "Delivery and installation", "Startup and warranty"],
+    "formEyebrow": "Request",
+    "formTitle": "Get an installation estimate",
+    "formDescription": "Leave your contacts and briefly describe the site. We will clarify details, advise on equipment, and prepare a preliminary estimate.",
+    "contacts": "Contacts",
+    "leaveRequest": "Leave a request",
+    "namePlaceholder": "Your name",
+    "phonePlaceholder": "Phone",
+    "messagePlaceholder": "Example: 120 m² house, boiler and radiator installation needed",
+    "defaultMessage": "Heating installation request",
+    "success": "Request sent! We will contact you.",
+    "error": "Could not send request. Please try again.",
+    "loading": "Sending...",
+    "submit": "Send request"
+  },
+  "heatingCategories": {
+    "eyebrow": "Catalog",
+    "title": "Heating Categories",
+    "description": "Core heating equipment sections: boilers, radiators, and underfloor heating. Each category is selected by output, working pressure, and installation profile.",
+    "openCategory": "Open category",
+    "items": {
+      "boilers": {
+        "title": "Boilers",
+        "summary": "Gas, electric, and solid-fuel boilers selected for the real heat loss of the property."
+      },
+      "radiators": {
+        "title": "Radiators",
+        "summary": "Panel, vertical, and designer radiators with verified heat output and working pressure."
+      },
+      "underfloor": {
+        "title": "Underfloor Heating",
+        "summary": "Manifolds, pipes, thermostats, and components for complete underfloor heating systems."
+      }
+    }
+  },
+  "proof": {
+    "eyebrow": "Proof Before Purchase",
+    "title": "Installed, certified, documented.",
+    "installationMap": "Completed installation map",
+    "certificates": "Certificates",
+    "certificatesText": "We provide certificates, equipment passports, and manufacturer warranty documents.",
+    "projectChecks": "Project checks",
+    "projectChecksText": "Before delivery, we review the area, insulation, pipe routing, and domestic hot water demand.",
+    "installs": {
+      "bishkekBoiler": {
+        "city": "Bishkek",
+        "detail": "38 kW boiler room"
+      },
+      "chuyUnderfloor": {
+        "city": "Chuy Region",
+        "detail": "Underfloor heating installation"
+      },
+      "bishkekRadiators": {
+        "city": "Bishkek",
+        "detail": "16 radiator replacement"
+      }
+    },
+    "consultation": {
+      "eyebrow": "Expert Consultation",
+      "title": "Get a sizing call",
+      "name": "Name",
+      "phone": "Phone or WhatsApp",
+      "details": "Project details",
+      "button": "Request consultation"
+    }
+  },
+  "contacts": {
+    "eyebrow": "Contact us",
+    "title": "Heating Center Contacts",
+    "description": "We will help you choose equipment, check availability, and prepare a request for your heating project.",
+    "phones": "Phones",
+    "callOrWhatsapp": "Call or WhatsApp",
+    "writeWhatsapp": "Write on WhatsApp {{phone}}",
+    "address": "Address",
+    "addressValue": "Bishkek, Togolok Moldo St. 324",
+    "feedback": "Feedback",
+    "leaveRequest": "Leave a request",
+    "telegramType": "Contact form",
+    "form": {
+      "name": "Name",
+      "phone": "Phone number",
+      "message": "Message",
+      "submit": "Send request",
+      "loading": "Sending...",
+      "success": "Request sent successfully! We will contact you.",
+      "error": "Could not send the request. Please try again."
+    },
+    "mapTitle": "2GIS Map"
+  },
+  "hero": {
+    "eyebrow": "Expert heating engineering systems",
+    "title": "Engineered comfort for your home",
+    "description": "We select boilers, radiators, and underfloor heating systems, calculate required output, and provide professional installation with warranty.",
+    "catalog": "Catalog",
+    "callback": "Request a call",
+    "imageAlt": "Professional heating equipment",
+    "calculator": {
+      "eyebrow": "Smart Heating Calculator",
+      "recommendedPower": "Recommended output: {{power}} kW",
+      "area": "Room area, m2",
+      "note": "The estimate is based on 100 W per m2 with reserve output for peak winter loads.",
+      "submit": "Get calculation"
+    }
+  },
+  "homeProducts": {
+    "eyebrow": "Catalog",
+    "title": "Popular Equipment",
+    "description": "Proven boilers, radiators, and underfloor heating kits with clear specifications, warehouse availability, and quick cart add."
+  },
+  "sidebar": {
+    "ariaLabel": "Equipment catalog",
+    "catalog": "Catalog",
+    "expand": "Expand catalog",
+    "collapse": "Collapse catalog",
+    "open": "Open catalog",
+    "close": "Close catalog",
+    "items": {
+      "heatPumps": "Heat pumps",
+      "bufferTanks": "Buffer tanks",
+      "fancoils": "Fan coils",
+      "boilers": "Boilers",
+      "waterHeaters": "Storage tanks and water heaters",
+      "radiators": "Radiators",
+      "pumps": "Pumps"
+    }
+  },
+  "products": {
+    "badges": {
+      "inStock": "In stock",
+      "new": "New"
+    },
+    "labels": {
+      "pressure": "Pressure",
+      "power": "Power"
+    },
+    "addToCart": "Add to cart",
+    "addToCartAria": "Add {{brand}} {{name}} to cart",
+    "items": {
+      "vaillantGasBoiler": {
+        "name": "Gas boiler",
+        "description": "Wall-mounted gas boiler for stable home heating."
+      },
+      "prothermElectricBoiler": {
+        "name": "Electric boiler",
+        "description": "Electric boiler for main or backup heating."
+      },
+      "royalThermoRadiator": {
+        "name": "Heating radiator",
+        "description": "Radiator with high heat output and a clean design."
+      },
+      "heatPumpPremium": {
+        "name": "Heat pump",
+        "description": "Energy-efficient pump for modern heating and domestic hot water."
+      },
+      "underfloorHeatingKit": {
+        "name": "Underfloor heating kit",
+        "description": "Ready-made hydronic underfloor heating kit with pipe, manifold, and controls."
+      }
+    }
+  },
+  "advantages": {
+    "warranty": "Official warranty",
+    "turnkey": "Turnkey installation",
+    "delivery": "Delivery across Kyrgyzstan",
+    "directSupply": "Direct supply"
+  },
+  "mobileNav": {
+    "home": "Home",
+    "catalog": "Catalog",
+    "cart": "Cart"
+  },
+  "footer": {
+    "description": "Professional heating equipment in Bishkek. More than 10 years in the market.",
+    "address": "Bishkek, Togolok Moldo St. 324",
+    "ariaLabel": "Footer navigation",
+    "groups": {
+      "boilers": {
+        "title": "Boilers",
+        "links": {
+          "gas": "Gas boilers",
+          "electric": "Electric boilers",
+          "solidFuel": "Solid-fuel boilers"
+        }
+      },
+      "radiators": {
+        "title": "Radiators",
+        "links": {
+          "panel": "Panel radiators",
+          "vertical": "Vertical radiators",
+          "design": "Designer radiators"
+        }
+      },
+      "underfloor": {
+        "title": "Underfloor Heating",
+        "links": {
+          "manifolds": "Manifolds",
+          "pipes": "Pipes",
+          "thermostats": "Thermostats"
+        }
+      },
+      "services": {
+        "title": "Services",
+        "links": {
+          "installation": "System installation",
+          "calculator": "Calculator",
+          "price": "Download price list",
+          "warranty": "Warranty and service"
+        }
+      }
+    }
+  },
+  "topBar": {
+    "address": "Bishkek, Togolok Moldo St. 324",
+    "contact": "Contact us",
+    "secondaryNav": "Secondary navigation"
+  },
+  "about": {
+    "hero": {
+      "eyebrow": "Heating equipment experts",
+      "title": "About Heating Center",
+      "description": "For more than 10 years, we have helped customers choose reliable heating systems, equip projects with the right products, and provide service support after purchase."
+    },
+    "stats": {
+      "years": "years in the market",
+      "stock": "items in stock",
+      "serviceCenter": "In-house service center"
+    },
+    "mission": {
+      "eyebrow": "Our mission",
+      "title": "Making professional heating clear and accessible",
+      "text": "We believe a reliable heating system starts not with a box of equipment, but with proper selection. Our approach is simple: understand the customer's task, offer an honest technical solution, and provide support when it is truly needed.",
+      "imageAlt": "Heating system equipment at Heating Center"
+    },
+    "assortment": {
+      "eyebrow": "Range and supply",
+      "title": "A wide selection of equipment from an official distributor",
+      "text": "We stock boilers, radiators, pump groups, automation, components, and underfloor heating solutions. As an official distributor, we provide original products, transparent warranty terms, and confidence in delivery timelines.",
+      "imageAlt": "Heating equipment warehouse and store at Heating Center"
+    },
+    "values": {
+      "eyebrow": "Our values",
+      "title": "The principles behind our work",
+      "items": {
+        "quality": {
+          "title": "Quality",
+          "text": "We work with proven brands and equipment that can handle real operating loads."
+        },
+        "reliability": {
+          "title": "Reliability",
+          "text": "We select solutions based on the property, budget, and future service needs."
+        },
+        "professionalism": {
+          "title": "Professionalism",
+          "text": "We consult, complete orders, and support customers at every stage of the project."
+        }
+      }
+    }
+  }
+}
