@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Calculator, Heart, MapPin, Menu, Phone, Search, ShoppingCart, X } from "lucide-react";
 import "@/src/i18n/config";
@@ -28,8 +28,11 @@ export function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const desktopSearchRef = useRef<HTMLFormElement>(null);
+  const mobileSearchRef = useRef<HTMLFormElement>(null);
   const cartCount = useCartStore((state) => state.count());
   const hydrateCart = useCartStore((state) => state.hydrateCart);
   const { favorites } = useFavorites();
@@ -72,7 +75,24 @@ export function Header() {
 
     const params = new URLSearchParams(window.location.search);
     setQuery(params.get("search") ?? "");
+    setSearchOpen(false);
   }, [mounted, pathname]);
+
+  useEffect(() => {
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node;
+
+      if (desktopSearchRef.current?.contains(target) || mobileSearchRef.current?.contains(target)) {
+        return;
+      }
+
+      setSearchOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleDocumentClick);
+
+    return () => document.removeEventListener("mousedown", handleDocumentClick);
+  }, []);
 
   useEffect(() => {
     if (!mounted || pathname !== "/catalog") return;
@@ -104,11 +124,21 @@ export function Header() {
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSearchOpen(false);
 
     const searchQuery = query.trim();
     if (searchQuery) {
       router.push(`/catalog?search=${encodeURIComponent(searchQuery)}#products`);
     }
+  }
+
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setSearchOpen(value.length >= 2);
+  }
+
+  function closeSearchResults() {
+    setSearchOpen(false);
   }
 
   if (!mounted) {
@@ -174,22 +204,24 @@ export function Header() {
           ))}
         </nav>
 
-        <form className="relative hidden min-w-[240px] flex-1 md:block xl:max-w-2xl" onSubmit={handleSearch}>
+        <form className="relative hidden min-w-[240px] flex-1 md:block xl:max-w-2xl" onSubmit={handleSearch} ref={desktopSearchRef}>
           <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
           <input
             aria-label={t("header.searchLabel")}
             className="h-12 w-full rounded-md border border-zinc-200 bg-zinc-50 pl-11 pr-4 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-[#FF4F00] focus:bg-white dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-white dark:placeholder:text-zinc-500 dark:focus:bg-zinc-900"
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => handleQueryChange(event.target.value)}
+            onFocus={() => setSearchOpen(query.length >= 2)}
             placeholder="Поиск отопительного оборудования..."
             value={query}
           />
-          {suggestions.length > 0 && (
+          {searchOpen && suggestions.length > 0 && (
             <div className="absolute left-0 right-0 top-14 z-[999] overflow-hidden rounded-md border border-zinc-200 bg-white text-zinc-950 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 dark:text-white">
               {suggestions.map((product, index) => (
                 <Link
                   className="flex items-center justify-between px-4 py-3 text-sm transition hover:bg-zinc-100 dark:hover:bg-zinc-900"
                   href={`/product/${product.id}`}
                   key={`${product.id}-${index}`}
+                  onClick={closeSearchResults}
                 >
                   <span className="font-semibold">{product.name}</span>
                   <span className="text-xs text-zinc-500 dark:text-zinc-500">{product.power}</span>
@@ -244,12 +276,13 @@ export function Header() {
       {menuOpen && (
         <div className="relative z-[999] border-t border-zinc-200 bg-white px-4 pb-5 text-zinc-950 dark:border-zinc-800 dark:bg-black dark:text-white xl:hidden">
           <div className="mx-auto grid max-w-7xl gap-2 py-2">
-            <form className="relative my-2 md:hidden" onSubmit={handleSearch}>
+            <form className="relative my-2 md:hidden" onSubmit={handleSearch} ref={mobileSearchRef}>
               <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
               <input
                 aria-label={t("header.searchLabel")}
                 className="h-12 w-full rounded-md border border-zinc-200 bg-zinc-50 pl-11 pr-4 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-[#FF4F00] dark:border-zinc-700 dark:bg-zinc-900/75 dark:text-white dark:placeholder:text-zinc-500"
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
+                onFocus={() => setSearchOpen(query.length >= 2)}
                 placeholder="Поиск отопительного оборудования..."
                 value={query}
               />
