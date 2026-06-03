@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadType {
+  CALLBACK
+  CALCULATOR
+}
+
+enum LeadStatus {
+  NEW
+  IN_PROGRESS
+  DONE
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name_ru  String
+  name_ky  String
+  name_en  String
+  i18nKey  String
+  slug     String    @unique
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  i18nKey        String   @unique
+  title_ru       String
+  title_ky       String
+  title_en       String
+  description_ru String
+  description_ky String
+  description_en String
+  brand          String
+  badgeKey       String   @default("inStock")
+  energyClass    String
+  pressure       String
+  power          String
+  price          Float
+  stock          Int      @default(0)
+  imageUrl       String?
+  categoryId     String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  name      String
+  phone     String
+  message   String?
+  type      LeadType
+  status    LeadStatus @default(NEW)
+  createdAt DateTime   @default(now())
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("leads")
+}
