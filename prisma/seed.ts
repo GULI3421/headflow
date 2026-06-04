@@ -16,16 +16,19 @@ const categories = [
   {
     name_ru: "Котлы",
     name_ky: "Казандыктар",
+    name_en: "Boilers", // <-- Добавлено
     slug: "boilers",
   },
   {
     name_ru: "Радиаторы",
     name_ky: "Радиаторлор",
+    name_en: "Radiators", // <-- Добавлено
     slug: "radiators",
   },
   {
     name_ru: "Теплый пол",
     name_ky: "Жылуу пол",
+    name_en: "Underfloor heating", // <-- Добавлено
     slug: "underfloor-heating",
   },
 ];
@@ -37,6 +40,7 @@ async function main() {
       update: {
         name_ru: category.name_ru,
         name_ky: category.name_ky,
+        name_en: category.name_en,
       },
       create: category,
     });
