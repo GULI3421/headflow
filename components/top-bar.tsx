@@ -44,7 +44,7 @@ export function TopBar() {
           <a className="transition hover:text-white" href="/contacts">
             {t("header.contacts")}
           </a>
-          <a className="text-[#FF4F00] transition hover:text-white" href="/price.pdf" rel="noreferrer" target="_blank">
+          <a className="text-[#FF4F00] transition hover:text-white" href="/api/prices/download" rel="noreferrer" target="_blank">
             {t("header.downloadPrice")}
           </a>
         </nav>

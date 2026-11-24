@@ -1,12 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ID } from "appwrite";
 import { Instagram, MapPin, MessageCircle, Phone, Send } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClientMounted } from "@/components/use-client-mounted";
-import { appwriteConfig, databases } from "@/src/lib/appwrite";
+import { createLeadDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const fadeIn = {
@@ -38,16 +37,7 @@ export default function ContactsPage() {
     setSubmitStatus("loading");
 
     try {
-      await databases.createDocument({
-        databaseId: appwriteConfig.databaseId,
-        collectionId: appwriteConfig.leadsCollectionId,
-        documentId: ID.unique(),
-        data: {
-          name: formData.name,
-          phone: formData.phone,
-          message: formData.message,
-        },
-      });
+      await createLeadDocument(formData);
 
       try {
         await fetch("/api/telegram", {

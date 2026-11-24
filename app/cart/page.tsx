@@ -1,26 +1,23 @@
 "use client";
 
-import { Query } from "appwrite";
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import {
-  appwriteConfig,
-  AppwriteProductDocument,
-  databases,
-  getProductImageUrl,
-} from "@/src/lib/appwrite";
+import { getProductImageUrl } from "@/src/lib/appwrite";
+import { downloadOrderPdf, type OrderPdfData } from "@/lib/order-pdf";
+import { listFavoriteProductDocuments, type ProductDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 import { useCartStore } from "@/store/cart-store";
 
 type HydratedCartItem = {
   id: string;
   quantity: number;
-  productData: AppwriteProductDocument;
+  variantPower?: string;
+  productData: ProductDocument;
 };
 
-function productTitle(product: AppwriteProductDocument, language: string, fallback: string) {
+function productTitle(product: ProductDocument, language: string, fallback: string) {
   if (language.startsWith("ky")) {
     return product.title_ky || product.title_ru || product.title_en || fallback;
   }
@@ -32,8 +29,13 @@ function productTitle(product: AppwriteProductDocument, language: string, fallba
   return product.title_ru || product.title_en || product.title_ky || fallback;
 }
 
-function productPrice(product: AppwriteProductDocument) {
+function productPrice(product: ProductDocument) {
   return Number(product.price) || 0;
+}
+
+function productStock(product: ProductDocument) {
+  const stock = product.stockQuantity ?? product.stock;
+  return typeof stock === "number" && Number.isFinite(stock) ? stock : undefined;
 }
 
 export default function CartPage() {
@@ -44,10 +46,19 @@ export default function CartPage() {
   const updateCartQuantity = useCartStore((state) => state.updateQuantity);
   const removeCartItem = useCartStore((state) => state.removeItem);
   const clearCart = useCartStore((state) => state.clearCart);
-  const [hydratedItems, setHydratedItems] = useState<HydratedCartItem[]>([]);
+  const [productDataByCartId, setProductDataByCartId] = useState<Record<string, ProductDocument>>({});
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [comment, setComment] = useState("");
+  const [lastOrder, setLastOrder] = useState<OrderPdfData | null>(null);
+  const [pdfError, setPdfError] = useState("");
+  const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const cartProductIdentity = useMemo(
+    () => JSON.stringify(cartItems.map((item) => [item.id, item.productId ?? item.id, item.variantPower ?? null])),
+    [cartItems],
+  );
 
   useEffect(() => {
     hydrateCart();
@@ -57,43 +68,63 @@ export default function CartPage() {
     let ignore = false;
 
     async function fetchCartProducts() {
-      setLoading(true);
-
       try {
         if (cartItems.length === 0) {
-          setHydratedItems([]);
+          setProductDataByCartId({});
+          setLoading(false);
           return;
         }
 
-        const ids = cartItems.map((item) => item.id).filter(Boolean);
-        const response = await databases.listDocuments<AppwriteProductDocument>({
-          databaseId: appwriteConfig.databaseId,
-          collectionId: appwriteConfig.productsCollectionId,
-          queries: [Query.equal("$id", ids), Query.limit(ids.length)],
-        });
+        const itemsToLoad = cartItems.filter((item) => !productDataByCartId[item.id]);
+        if (itemsToLoad.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+        const ids = itemsToLoad.map((item) => item.productId ?? item.id).filter(Boolean);
+        const response = await listFavoriteProductDocuments(ids);
 
         if (ignore) return;
 
-        const combined = cartItems
-          .map((localItem) => {
-            const matched = response.documents.find((document) => document.$id === localItem.id);
+        const combined = itemsToLoad
+          .map((cartRecord) => {
+            const matched = response.documents.find((document) => document.id === (cartRecord.productId ?? cartRecord.id));
+            const variant = cartRecord.variantPower
+              ? matched?.powerVariants?.find((item) => item.power === cartRecord.variantPower)
+              : undefined;
 
             return matched
               ? {
-                  id: localItem.id,
-                  quantity: localItem.quantity,
-                  productData: matched,
+                  id: cartRecord.id,
+                  productData: variant
+                    ? {
+                        ...matched,
+                        price: variant.price,
+                        oldPrice: variant.oldPrice,
+                        old_price: variant.oldPrice,
+                        stockQuantity: variant.stockQuantity,
+                      }
+                    : matched,
                 }
               : null;
           })
-          .filter((item): item is HydratedCartItem => item !== null);
+          .filter((item): item is { id: string; productData: ProductDocument } => item !== null);
 
-        setHydratedItems(combined);
+        for (const { id, productData } of combined) {
+          const cartRecord = itemsToLoad.find((item) => item.id === id);
+          const availableStock = productStock(productData);
+          if (cartRecord && availableStock !== undefined && cartRecord.quantity > availableStock) {
+            updateCartQuantity(id, availableStock, availableStock);
+          }
+        }
+
+        setProductDataByCartId((current) => ({
+          ...current,
+          ...Object.fromEntries(combined.map(({ id, productData }) => [id, productData])),
+        }));
       } catch (error) {
         console.error("Cart hydration error:", error);
-        if (!ignore) {
-          setHydratedItems([]);
-        }
       } finally {
         if (!ignore) {
           setLoading(false);
@@ -106,7 +137,17 @@ export default function CartPage() {
     return () => {
       ignore = true;
     };
-  }, [cartItems]);
+  }, [cartProductIdentity, updateCartQuantity]);
+
+  const hydratedItems = useMemo(
+    () => cartItems.flatMap((item) => {
+      const productData = productDataByCartId[item.id];
+      return productData
+        ? [{ id: item.id, quantity: item.quantity, variantPower: item.variantPower, productData }]
+        : [];
+    }),
+    [cartItems, productDataByCartId],
+  );
 
   const total = useMemo(
     () => hydratedItems.reduce((sum, item) => sum + productPrice(item.productData) * item.quantity, 0),
@@ -117,7 +158,8 @@ export default function CartPage() {
     const currentItem = cartItems.find((item) => item.id === id);
     if (!currentItem) return;
 
-    updateCartQuantity(id, currentItem.quantity + delta);
+    const hydratedItem = hydratedItems.find((item) => item.id === id);
+    updateCartQuantity(id, currentItem.quantity + delta, hydratedItem ? productStock(hydratedItem.productData) : undefined);
   }
 
   function removeItem(id: string) {
@@ -126,13 +168,44 @@ export default function CartPage() {
 
   async function handleWhatsAppSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting || hydratedItems.length === 0) return;
+
+    const createdAt = new Date();
+    const orderDate = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Asia/Bishkek",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(createdAt).replaceAll("-", "");
+    const orderNumber = `CO-${orderDate}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+    const order: OrderPdfData = {
+      orderNumber,
+      createdAt: createdAt.toISOString(),
+      customerName: name.trim(),
+      customerPhone: phone.trim(),
+      customerComment: comment.trim(),
+      items: hydratedItems.map((item) => {
+        const unitPrice = productPrice(item.productData);
+        return {
+          name: item.productData.title_ru || productTitle(item.productData, "ru", t("cartPage.fallbackProduct")),
+          variant: item.variantPower,
+          quantity: item.quantity,
+          unitPrice,
+          lineTotal: unitPrice * item.quantity,
+        };
+      }),
+      total,
+    };
+    setLastOrder(order);
+    setPdfError("");
+    setSubmitting(true);
 
     const itemsListText = hydratedItems
       .map((item, index) => {
         const lineTotal = productPrice(item.productData) * item.quantity;
-        return `${index + 1}. ${productTitle(item.productData, language, t("cartPage.fallbackProduct"))} x ${
-          item.quantity
-        } — ${lineTotal.toLocaleString("ru-RU")} KGS`;
+        const title = productTitle(item.productData, language, t("cartPage.fallbackProduct"));
+        const variant = item.variantPower ? ` · ${item.variantPower}` : "";
+        return `${index + 1}. ${title}${variant} x ${item.quantity} — ${lineTotal.toLocaleString("ru-RU")} KGS`;
       })
       .join("\n");
 
@@ -141,7 +214,13 @@ export default function CartPage() {
       phone,
       items: itemsListText,
       total: total.toLocaleString("ru-RU"),
+      orderNumber,
+      commentLine: comment.trim() ? `\n${t("cartPage.comment")}: ${comment.trim()}` : "",
     });
+
+    window.open(`https://wa.me/996708605281?text=${encodeURIComponent(message)}`, "_blank");
+
+    await handleDownloadOrderPdf(order);
 
     try {
       await fetch("/api/telegram", {
@@ -150,23 +229,37 @@ export default function CartPage() {
         body: JSON.stringify({
           name,
           phone,
+          message: [comment.trim(), `Номер заказа: ${orderNumber}`].filter(Boolean).join("\n"),
           items: itemsListText,
           total: total.toLocaleString("ru-RU"),
-          type: t("cartPage.telegramType"),
+          type: `${t("cartPage.telegramType")} № ${orderNumber}`,
         }),
       });
     } catch (error) {
       console.error("Failed to send Telegram order notification", error);
     }
 
-    window.open(`https://wa.me/996708605281?text=${encodeURIComponent(message)}`, "_blank");
     clearCart();
-    setHydratedItems([]);
     setName("");
     setPhone("");
+    setComment("");
+    setSubmitting(false);
   }
 
-  if (loading) {
+  async function handleDownloadOrderPdf(order: OrderPdfData) {
+    setPdfDownloading(true);
+    setPdfError("");
+    try {
+      await downloadOrderPdf(order);
+    } catch (error) {
+      console.error("Failed to download order PDF", error);
+      setPdfError(t("cartPage.pdfError"));
+    } finally {
+      setPdfDownloading(false);
+    }
+  }
+
+  if (loading && cartItems.length > 0 && hydratedItems.length === 0) {
     return (
       <div className="min-h-screen bg-white py-20 text-center text-zinc-950 dark:bg-black dark:text-white">
         {t("cartPage.loading")}
@@ -181,6 +274,30 @@ export default function CartPage() {
           <ShoppingBag className="text-orange-500" aria-hidden />
           {t("cartPage.title")}
         </h1>
+
+        {lastOrder && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-green-500/25 bg-green-500/[0.06] p-4">
+            <div>
+              <p role="status" className="font-bold text-green-700 dark:text-green-300">
+                {t("cartPage.orderReady", { orderNumber: lastOrder.orderNumber })}
+              </p>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{t("cartPage.pdfReadyNote")}</p>
+            </div>
+            <button
+              className="rounded-lg bg-[#FF4F00] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
+              disabled={pdfDownloading}
+              onClick={() => handleDownloadOrderPdf(lastOrder)}
+              type="button"
+            >
+              {pdfDownloading ? t("cartPage.downloadingPdf") : t("cartPage.downloadPdf")}
+            </button>
+          </div>
+        )}
+        {pdfError && (
+          <p role="alert" className="mb-6 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+            {pdfError}
+          </p>
+        )}
 
         {hydratedItems.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 py-20 text-center dark:border-zinc-800 dark:bg-zinc-950">
@@ -200,6 +317,7 @@ export default function CartPage() {
                   item.productData.image_id?.length ? item.productData.image_id : item.productData.imageUrl ?? "",
                 );
                 const price = productPrice(item.productData);
+                const availableStock = productStock(item.productData);
 
                 return (
                   <div
@@ -221,6 +339,7 @@ export default function CartPage() {
                       <Link href={`/product/${item.id}`}>
                         <h2 className="line-clamp-2 text-lg font-bold text-zinc-950 transition hover:text-orange-500 dark:text-white">
                           {productTitle(item.productData, language, t("cartPage.fallbackProduct"))}
+                          {item.variantPower ? ` · ${item.variantPower}` : ""}
                         </h2>
                       </Link>
                       <p className="mt-2 text-sm text-zinc-500">
@@ -232,6 +351,7 @@ export default function CartPage() {
                       <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
                         <button
                           onClick={() => updateQuantity(item.id, -1)}
+                          aria-label="Уменьшить количество"
                           className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
                           type="button"
                         >
@@ -240,7 +360,9 @@ export default function CartPage() {
                         <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(item.id, 1)}
-                          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                          aria-label="Увеличить количество"
+                          disabled={availableStock !== undefined && item.quantity >= availableStock}
+                          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
                           type="button"
                         >
                           <Plus className="size-3.5" />
@@ -302,13 +424,23 @@ export default function CartPage() {
                     value={phone}
                   />
                 </label>
+                <label className="grid gap-2 text-sm font-bold">
+                  {t("cartPage.comment")}
+                  <textarea
+                    className="min-h-24 resize-y rounded-xl border border-zinc-200 bg-white px-4 py-3 font-normal text-zinc-950 outline-none focus:border-orange-500 dark:border-zinc-800 dark:bg-black dark:text-white"
+                    onChange={(event) => setComment(event.target.value)}
+                    placeholder={t("cartPage.commentPlaceholder")}
+                    value={comment}
+                  />
+                </label>
               </div>
 
               <button
-                className="w-full rounded-xl bg-orange-600 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-orange-500"
+                className="w-full rounded-xl bg-orange-600 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
+                disabled={submitting || pdfDownloading}
                 type="submit"
               >
-                {t("cartPage.submit")}
+                {submitting ? t("cartPage.processing") : t("cartPage.submit")}
               </button>
               <p className="text-center text-xs leading-5 text-zinc-500">{t("cartPage.note")}</p>
             </form>

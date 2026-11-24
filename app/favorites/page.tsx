@@ -1,22 +1,21 @@
 "use client";
 
-import { Query } from "appwrite";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProductGrid } from "@/components/product-grid";
 import type { Product } from "@/lib/products";
-import { appwriteConfig, AppwriteProductDocument, databases, mapAppwriteProduct } from "@/src/lib/appwrite";
+import { listFavoriteProductDocuments, mapProduct, type ProductDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const favoritesStorageKey = "heatflow:favorites";
 
 export default function FavoritesPage() {
   const { t, i18n } = useTranslation();
-  const [favoriteDocuments, setFavoriteDocuments] = useState<AppwriteProductDocument[]>([]);
+  const [favoriteDocuments, setFavoriteDocuments] = useState<ProductDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const products = useMemo<Product[]>(
-    () => favoriteDocuments.map((item) => mapAppwriteProduct(item, i18n.language)),
+    () => favoriteDocuments.map((item) => mapProduct(item, i18n.language)),
     [favoriteDocuments, i18n.language],
   );
 
@@ -32,15 +31,11 @@ export default function FavoritesPage() {
           return;
         }
 
-        const response = await databases.listDocuments<AppwriteProductDocument>({
-          databaseId: appwriteConfig.databaseId,
-          collectionId: appwriteConfig.productsCollectionId,
-          queries: [Query.equal("$id", favoriteIds), Query.limit(favoriteIds.length)],
-        });
+        const response = await listFavoriteProductDocuments(favoriteIds);
 
         const favoriteOrder = new Map(favoriteIds.map((id: string, index: number) => [id, index]));
         const sortedDocuments = response.documents.sort(
-          (a, b) => (favoriteOrder.get(a.$id) ?? 0) - (favoriteOrder.get(b.$id) ?? 0),
+          (a, b) => (favoriteOrder.get(a.id) ?? 0) - (favoriteOrder.get(b.id) ?? 0),
         );
 
         setFavoriteDocuments(sortedDocuments);

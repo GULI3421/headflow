@@ -8,6 +8,10 @@ export type Product = {
   category: string;
   subcategory?: string;
   price: number;
+  oldPrice?: number | null;
+  stockQuantity?: number;
+  powerVariants?: { power: string; price: number; oldPrice?: number | null; stockQuantity: number }[];
+  variantPower?: string;
   image: string;
   badgeKey: "inStock" | "new";
   badge: string;

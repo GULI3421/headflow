@@ -6,7 +6,7 @@ import { Award, CheckCircle2, Handshake, ShieldCheck, Wrench } from "lucide-reac
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClientMounted } from "@/components/use-client-mounted";
-import { listProductDocuments } from "@/src/lib/appwrite";
+import { listProductDocuments } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const fadeIn = {

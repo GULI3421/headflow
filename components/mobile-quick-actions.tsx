@@ -10,7 +10,7 @@ import { useCartStore } from "@/store/cart-store";
 
 export function MobileQuickActions() {
   const mounted = useClientMounted();
-  const cartCount = useCartStore((state) => state.count());
+  const cartCount = useCartStore((state) => state.items.reduce((total, item) => total + item.quantity, 0));
   const hydrateCart = useCartStore((state) => state.hydrateCart);
   const { t } = useTranslation();
 

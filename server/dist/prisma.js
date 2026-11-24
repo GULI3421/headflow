@@ -1,14 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.prisma = void 0;
-require("dotenv/config");
+const dotenv_1 = require("dotenv");
 const client_1 = require("@prisma/client");
-const adapter_pg_1 = require("@prisma/adapter-pg");
+(0, dotenv_1.config)({ path: ["../.env.local", "../.env", ".env"] });
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
     throw new Error("DATABASE_URL is required.");
 }
-const adapter = new adapter_pg_1.PrismaPg(databaseUrl);
-exports.prisma = new client_1.PrismaClient({
-    adapter,
-});
+exports.prisma = new client_1.PrismaClient();

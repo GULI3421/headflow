@@ -37,7 +37,7 @@ const footerGroups = [
     links: [
       ["installation", "/installation"],
       ["calculator", "/calculator"],
-      ["price", "/price.pdf"],
+      ["price", "/api/prices/download"],
       ["warranty", "/contacts"],
     ],
   },

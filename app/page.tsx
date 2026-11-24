@@ -11,7 +11,7 @@ import { SidebarCatalog } from "@/components/sidebar-catalog";
 import { TrustBlocks } from "@/components/trust-blocks";
 import { useClientMounted } from "@/components/use-client-mounted";
 import type { Product } from "@/lib/products";
-import { listProductDocuments, mapAppwriteProduct } from "@/src/lib/appwrite";
+import { listProductDocuments, mapProduct } from "@/src/lib/products-api";
 import { useTranslation } from "react-i18next";
 import "@/src/i18n/config";
 
@@ -33,7 +33,7 @@ export default function HomePage() {
         const response = await listProductDocuments(null, null, 8);
 
         if (!ignore) {
-          setFeaturedProducts(response.documents.map((product) => mapAppwriteProduct(product, i18n.language)));
+          setFeaturedProducts(response.documents.map((product) => mapProduct(product, i18n.language)));
         }
       } catch {
         if (!ignore) {

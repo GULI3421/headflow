@@ -3,7 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
 }
 
 enum LeadType {
@@ -12,43 +13,93 @@ enum LeadType {
 }
 
 model Category {
-  id       String    @id @default(cuid())
-  name_ru  String
-  name_ky  String
-  name_en  String
-  slug     String    @unique
-  products Product[]
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  name_ru String
+  name_ky String
+  name_en String
+  slug    String @unique
 
   @@map("categories")
 }
 
 model Product {
-  id             String   @id @default(cuid())
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
   title_ru       String
-  title_ky       String
-  title_en       String
-  description_ru String
-  description_ky String
-  price          Decimal  @db.Decimal(12, 2)
+  title_ky       String?
+  title_en       String?
+  description_ru String?
+  description_ky String?
+  description_en String?
+  price          Float
+  old_price      Float?
   stock          Int      @default(0)
-  image_url      String?
-  specs          Json
-  categoryId     String
-  category       Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  oldPrice       Float?
+  stockQuantity  Int      @default(0)
+  powerVariants  Json?
+  image_id       String[] @default([])
+  imageUrl       String?
+  certificateUrl String?
+  certificateFileName String?
+  passportUrl    String?
+  passportFileName String?
+  category       String
+  subcategory    String?
+  power_options  String[] @default([])
+  description    String?
+  specs          Json?
+  brand          String?
+  badgeKey       String?
+  energyClass    String?
+  pressure       String?
+  power          String?
 
-  @@index([categoryId])
+  @@index([category])
   @@map("products")
 }
 
+model PriceList {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  fileUrl     String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([updatedAt])
+  @@map("price_lists")
+}
+
 model Lead {
-  id            String   @id @default(cuid())
-  customer_name String
-  phone         String
-  message       String?
-  type          LeadType
-  createdAt     DateTime @default(now())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  phone     String
+  message   String?
+  type      LeadType @default(callback)
+  createdAt DateTime @default(now())
 
   @@index([type])
   @@index([createdAt])
   @@map("leads")
+}
+
+model AdminUser {
+  id           String         @id @default(auto()) @map("_id") @db.ObjectId
+  email        String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  sessions     AdminSession[]
+
+  @@map("admin_users")
+}
+
+model AdminSession {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  tokenHash String    @unique
+  userId    String    @db.ObjectId
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("admin_sessions")
 }

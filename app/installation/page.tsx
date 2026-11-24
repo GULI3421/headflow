@@ -1,10 +1,9 @@
 "use client";
 
-import { ID } from "appwrite";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, CheckCircle2, Flame, Hammer, Heater, Layers3, PenTool, Route, Send } from "lucide-react";
-import { appwriteConfig, databases } from "@/src/lib/appwrite";
+import { createLeadDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const services = [
@@ -40,15 +39,9 @@ export default function InstallationPage() {
     setSubmitStatus("loading");
 
     try {
-      await databases.createDocument({
-        databaseId: appwriteConfig.databaseId,
-        collectionId: appwriteConfig.leadsCollectionId,
-        documentId: ID.unique(),
-        data: {
-          name: formData.name,
-          phone: formData.phone,
-          message: formData.message || t("installationPage.defaultMessage"),
-        },
+      await createLeadDocument({
+        ...formData,
+        message: formData.message || t("installationPage.defaultMessage"),
       });
 
       try {

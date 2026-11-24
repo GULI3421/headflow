@@ -3,21 +3,21 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Query } from "appwrite";
-import { ArrowLeft, CheckCircle2, Heart, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Heart, Loader2, ShoppingCart } from "lucide-react";
 import { ProductGrid } from "@/components/product-grid";
 import type { Product } from "@/lib/products";
+import { getStockStatus } from "@/lib/stock-status";
+import { getProductImageUrl } from "@/src/lib/appwrite";
 import {
-  appwriteConfig,
-  AppwriteProductDocument,
-  databases,
-  getProductImageUrl,
-  mapAppwriteProduct,
-} from "@/src/lib/appwrite";
+  getProductDocument,
+  listRelatedProductDocuments,
+  mapProduct,
+  type ProductDocument,
+} from "@/src/lib/products-api";
 import { useCartStore } from "@/store/cart-store";
 import { useFavorites } from "@/store/use-favorites";
 
-function parseSpecs(specs: AppwriteProductDocument["specs"]) {
+function parseSpecs(specs: ProductDocument["specs"]) {
   if (!specs) return [];
 
   const values = Array.isArray(specs) ? specs : specs.split(/\n|,/);
@@ -39,8 +39,9 @@ export default function ProductDetailPage() {
   const productId = params.id;
   const addItem = useCartStore((state) => state.addItem);
   const { isFavorite, toggleFavorite } = useFavorites();
-  const [product, setProduct] = useState<AppwriteProductDocument | null>(null);
+  const [product, setProduct] = useState<ProductDocument | null>(null);
   const [mappedProduct, setMappedProduct] = useState<Product | null>(null);
+  const [selectedVariantPower, setSelectedVariantPower] = useState("");
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,31 +59,20 @@ export default function ProductDetailPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
 
       try {
-        const response = await databases.getDocument<AppwriteProductDocument>({
-          databaseId: appwriteConfig.databaseId,
-          collectionId: appwriteConfig.productsCollectionId,
-          documentId: productId,
-        });
+        const response = await getProductDocument(productId);
 
         if (ignore) return;
 
         setProduct(response);
-        setMappedProduct(mapAppwriteProduct(response, "ru"));
+        setMappedProduct(mapProduct(response, "ru"));
+        setSelectedVariantPower(Array.isArray(response.powerVariants) && response.powerVariants.length ? response.powerVariants[0].power : "");
 
         try {
-          const relatedData = await databases.listDocuments<AppwriteProductDocument>({
-            databaseId: appwriteConfig.databaseId,
-            collectionId: appwriteConfig.productsCollectionId,
-            queries: [
-              Query.equal("category", response?.category ?? ""),
-              Query.notEqual("$id", response.$id),
-              Query.limit(8),
-            ],
-          });
+          const relatedData = await listRelatedProductDocuments(response.category ?? "", response.id, 8);
 
           if (!ignore) {
             const documents = Array.isArray(relatedData?.documents) ? relatedData.documents : [];
-            setRelatedProducts(documents.map((item) => mapAppwriteProduct(item, "ru")));
+            setRelatedProducts(documents.map((item) => mapProduct(item, "ru")));
           }
         } catch {
           if (!ignore) {
@@ -197,6 +187,37 @@ export default function ProductDetailPage() {
               </button>
             </div>
 
+            {(product.certificateUrl || product.passportUrl) && (
+              <div className="grid gap-2">
+                {([
+                  {
+                    label: "Сертификат соответствия",
+                    url: product.certificateUrl ?? "",
+                    fileName: product.certificateFileName,
+                  },
+                  {
+                    label: "Паспорт",
+                    url: product.passportUrl ?? "",
+                    fileName: product.passportFileName,
+                  },
+                ] as const).filter((document) => document.url).map((document) => (
+                  <a
+                    className="flex min-h-12 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition hover:border-[#FF4D00]/50 hover:text-[#FF4D00] dark:border-white/10 dark:bg-zinc-900/50 dark:text-zinc-200 dark:hover:text-[#FF4D00]"
+                    href={document.url}
+                    key={document.label}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <FileText className="shrink-0 text-[#FF4D00]" size={18} aria-hidden />
+                    <span className="min-w-0 flex-1">{document.label}</span>
+                    <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                      {document.fileName?.toUpperCase().endsWith(".PDF") ? "PDF" : "Документ"}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+
             <div className="rounded-xl border border-zinc-200 bg-zinc-100 p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
               <h3 className="mb-3 text-lg font-medium text-zinc-900 dark:text-zinc-100">Описание товара</h3>
               <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
@@ -223,17 +244,13 @@ export default function ProductDetailPage() {
             <div className="mt-7 flex flex-col gap-4 border-y border-zinc-200 py-6 dark:border-white/10 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-zinc-500 dark:text-white/38">Цена</p>
-                <p className="mt-1 text-4xl font-black text-[#FF4D00]">
-                  {Number(product?.price ?? 0).toLocaleString("ru-RU")} KGS
-                </p>
+                {(() => { const variant = product?.powerVariants?.find((item) => item.power === selectedVariantPower); const price = variant?.price ?? Number(product?.price ?? 0); const oldPrice = variant?.oldPrice ?? product?.oldPrice ?? product?.old_price; return <><p className="mt-1 text-4xl font-black text-[#FF4D00]">{price.toLocaleString("ru-RU")} сом</p>{Number(oldPrice ?? 0) > price && <p className="mt-1 text-lg text-zinc-500 line-through">{Number(oldPrice).toLocaleString("ru-RU")} сом</p>}</>; })()}
               </div>
-              <div className="inline-flex items-center gap-2 text-sm font-bold text-green-700 dark:text-green-300">
-                <CheckCircle2 size={18} aria-hidden />
-                В наличии
-              </div>
+              {(() => { const variant = product?.powerVariants?.find((item) => item.power === selectedVariantPower); const stock = Number(variant?.stockQuantity ?? product?.stockQuantity ?? product?.stock ?? 0); const status = getStockStatus(stock); return <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${status.className}`}>{status.key === "inStock" && <CheckCircle2 size={16} aria-hidden />}{status.label}</div>; })()}
             </div>
 
             <div className="mt-6">
+              {Array.isArray(product?.powerVariants) && product.powerVariants.length > 0 && <section className="mb-5 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"><label className="grid gap-2 font-bold">Вариант мощности<select className="h-11 rounded-md border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900" value={selectedVariantPower} onChange={(event) => setSelectedVariantPower(event.target.value)}>{product.powerVariants.map((variant) => <option key={variant.power} value={variant.power}>{variant.power} · {variant.stockQuantity > 0 ? `${variant.stockQuantity} шт.` : "Нет в наличии"}</option>)}</select></label></section>}
               <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500 dark:text-white/45">Характеристики</h2>
               <dl className="mt-4 grid gap-2 sm:grid-cols-2">
                 {specs.map((spec) => (
@@ -246,12 +263,13 @@ export default function ProductDetailPage() {
             </div>
 
             <button
-              className="mt-7 flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[#FF4D00] text-sm font-black uppercase text-white shadow-[0_0_32px_rgba(255,77,0,0.22)] transition hover:bg-[#e64800]"
-              onClick={() => addItem(mappedProduct)}
+              className="mt-7 flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[#FF4D00] text-sm font-black uppercase text-white shadow-[0_0_32px_rgba(255,77,0,0.22)] transition hover:bg-[#e64800] disabled:cursor-not-allowed disabled:bg-zinc-400"
+              onClick={() => { if (!mappedProduct) return; const variant = product?.powerVariants?.find((item) => item.power === selectedVariantPower); addItem(variant ? { ...mappedProduct, id: `${mappedProduct.id}::${variant.power}`, name: `${mappedProduct.name} · ${variant.power}`, price: variant.price, oldPrice: variant.oldPrice, stockQuantity: variant.stockQuantity, variantPower: variant.power } : mappedProduct); }}
+              disabled={Number(product?.powerVariants?.find((item) => item.power === selectedVariantPower)?.stockQuantity ?? product?.stockQuantity ?? product?.stock ?? 0) <= 0}
               type="button"
             >
               <ShoppingCart size={19} aria-hidden />
-              Добавить в корзину
+              {Number(product?.powerVariants?.find((item) => item.power === selectedVariantPower)?.stockQuantity ?? product?.stockQuantity ?? product?.stock ?? 0) <= 0 ? "Нет в наличии" : "Добавить в корзину"}
             </button>
           </div>
         </div>

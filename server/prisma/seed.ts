@@ -107,11 +107,17 @@ async function main() {
         name_ru: category.name_ru,
         name_ky: category.name_ky,
         name_en: category.name_en,
-        i18nKey: category.i18nKey,
       },
-      create: category,
+      create: {
+        slug: category.slug,
+        name_ru: category.name_ru,
+        name_ky: category.name_ky,
+        name_en: category.name_en,
+      },
     });
   }
+
+  // Дальше у вас идет код для продуктов (for (const product of products)...) - его не трогайте.
 
   for (const product of products) {
     const category = await prisma.category.findUniqueOrThrow({

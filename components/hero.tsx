@@ -3,11 +3,10 @@
 import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ID } from "appwrite";
 import { ArrowRight, Flame, Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClientMounted } from "@/components/use-client-mounted";
-import { appwriteConfig, databases } from "@/src/lib/appwrite";
+import { createLeadDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const successMessage = "Заявка успешно отправлена! Мы свяжемся с вами.";
@@ -32,15 +31,11 @@ export function Hero() {
     setSubmitStatus("loading");
 
     try {
-      await databases.createDocument({
-        databaseId: appwriteConfig.databaseId,
-        collectionId: appwriteConfig.leadsCollectionId,
-        documentId: ID.unique(),
-        data: {
-          name: calculatorForm.name,
-          phone: calculatorForm.phone,
-          message: `Calculator request. Area: ${area} m2. Recommended power: ${boilerPower} kW.`,
-        },
+      await createLeadDocument({
+        name: calculatorForm.name,
+        phone: calculatorForm.phone,
+        message: `Calculator request. Area: ${area} m2. Recommended power: ${boilerPower} kW.`,
+        type: "calculator",
       });
 
       try {

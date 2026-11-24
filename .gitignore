@@ -1,3 +1,8 @@
 .next/
 node_modules/
 .vercel
+.env
+.env.local
+!.env.example
+/public/uploads/
+/public/prices/

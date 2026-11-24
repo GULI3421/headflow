@@ -12,7 +12,7 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { useClientMounted } from "@/components/use-client-mounted";
 import { categoryHref } from "@/lib/catalog";
 import type { Product } from "@/lib/products";
-import { listProductDocuments, mapAppwriteProduct } from "@/src/lib/appwrite";
+import { listProductDocuments, mapProduct } from "@/src/lib/products-api";
 import { useCartStore } from "@/store/cart-store";
 import { useFavorites } from "@/store/use-favorites";
 
@@ -33,7 +33,7 @@ export function Header() {
   const [products, setProducts] = useState<Product[]>([]);
   const desktopSearchRef = useRef<HTMLFormElement>(null);
   const mobileSearchRef = useRef<HTMLFormElement>(null);
-  const cartCount = useCartStore((state) => state.count());
+  const cartCount = useCartStore((state) => state.items.reduce((total, item) => total + item.quantity, 0));
   const hydrateCart = useCartStore((state) => state.hydrateCart);
   const { favorites } = useFavorites();
   const { t, i18n } = useTranslation();
@@ -55,7 +55,7 @@ export function Header() {
 
         if (ignore) return;
 
-        setProducts(response.documents.map((product) => mapAppwriteProduct(product, i18n.language)));
+        setProducts(response.documents.map((product) => mapProduct(product, i18n.language)));
       } catch {
         if (!ignore) {
           setProducts([]);
@@ -167,7 +167,7 @@ export function Header() {
             <Link className="transition hover:text-zinc-950 dark:hover:text-white" href="/contacts">
               {t("header.contacts")}
             </Link>
-            <a className="text-[#FF4F00] transition hover:text-zinc-950 dark:hover:text-white" href="/price.pdf" rel="noreferrer" target="_blank">
+            <a className="text-[#FF4F00] transition hover:text-zinc-950 dark:hover:text-white" href="/api/prices/download" rel="noreferrer" target="_blank">
               {t("header.downloadPrice")}
             </a>
           </nav>
@@ -312,7 +312,7 @@ export function Header() {
               <Link className="block rounded-md py-2 text-sm font-semibold text-zinc-600 dark:text-white/70" href="/contacts">
                 {t("header.contacts")}
               </Link>
-              <a className="block rounded-md py-2 text-sm font-semibold text-[#FF4F00]" href="/price.pdf" rel="noreferrer" target="_blank">
+              <a className="block rounded-md py-2 text-sm font-semibold text-[#FF4F00]" href="/api/prices/download" rel="noreferrer" target="_blank">
                 {t("header.downloadPrice")}
               </a>
             </div>

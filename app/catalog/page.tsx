@@ -7,7 +7,7 @@ import { SidebarCatalog } from "@/components/sidebar-catalog";
 import { useClientMounted } from "@/components/use-client-mounted";
 import { catalogCategories, categoryTranslationKey, subcategoryTranslationKey } from "@/lib/catalog";
 import type { Product } from "@/lib/products";
-import { listProductDocuments, mapAppwriteProduct } from "@/src/lib/appwrite";
+import { listProductDocuments, mapProduct } from "@/src/lib/products-api";
 import { useTranslation } from "react-i18next";
 import "@/src/i18n/config";
 
@@ -53,7 +53,7 @@ function CatalogPageContent() {
         if (ignore) return;
 
         const documents = Array.isArray(response?.documents) ? response.documents : [];
-        setProducts(documents.map((product) => mapAppwriteProduct(product, i18n.language)));
+        setProducts(documents.map((product) => mapProduct(product, i18n.language)));
       } catch {
         if (!ignore) {
           setProducts([]);
