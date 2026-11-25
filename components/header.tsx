@@ -33,7 +33,7 @@ export function Header() {
   const [products, setProducts] = useState<Product[]>([]);
   const desktopSearchRef = useRef<HTMLFormElement>(null);
   const mobileSearchRef = useRef<HTMLFormElement>(null);
-  const cartCount = useCartStore((state) => state.items.reduce((total, item) => total + item.quantity, 0));
+  const cartCount = useCartStore((state) => state.count());
   const hydrateCart = useCartStore((state) => state.hydrateCart);
   const { favorites } = useFavorites();
   const { t, i18n } = useTranslation();
@@ -45,30 +45,36 @@ export function Header() {
   }, [hydrateCart, mounted]);
 
   useEffect(() => {
-    if (!mounted) return;
+    const searchTerm = query.trim();
+    if (!mounted || searchTerm.length < 2) {
+      setProducts([]);
+      return;
+    }
 
     let ignore = false;
 
     async function loadProducts() {
       try {
-        const response = await listProductDocuments();
+        const response = await listProductDocuments(null, null, 10, searchTerm);
 
         if (ignore) return;
 
         setProducts(response.documents.map((product) => mapProduct(product, i18n.language)));
-      } catch {
+      } catch (error) {
+        console.error("Не удалось загрузить подсказки поиска", error);
         if (!ignore) {
           setProducts([]);
         }
       }
     }
 
-    loadProducts();
+    const timeoutId = window.setTimeout(loadProducts, 200);
 
     return () => {
       ignore = true;
+      window.clearTimeout(timeoutId);
     };
-  }, [i18n.language, mounted]);
+  }, [i18n.language, mounted, query]);
 
   useEffect(() => {
     if (!mounted || pathname !== "/catalog") return;
@@ -166,6 +172,9 @@ export function Header() {
             </Link>
             <Link className="transition hover:text-zinc-950 dark:hover:text-white" href="/contacts">
               {t("header.contacts")}
+            </Link>
+            <Link className="transition hover:text-zinc-950 dark:hover:text-white" href="/orders">
+              {t("header.orders")}
             </Link>
             <a className="text-[#FF4F00] transition hover:text-zinc-950 dark:hover:text-white" href="/api/prices/download" rel="noreferrer" target="_blank">
               {t("header.downloadPrice")}
@@ -311,6 +320,9 @@ export function Header() {
               </Link>
               <Link className="block rounded-md py-2 text-sm font-semibold text-zinc-600 dark:text-white/70" href="/contacts">
                 {t("header.contacts")}
+              </Link>
+              <Link className="block rounded-md py-2 text-sm font-semibold text-zinc-600 dark:text-white/70" href="/orders" onClick={() => setMenuOpen(false)}>
+                {t("header.orders")}
               </Link>
               <a className="block rounded-md py-2 text-sm font-semibold text-[#FF4F00]" href="/api/prices/download" rel="noreferrer" target="_blank">
                 {t("header.downloadPrice")}

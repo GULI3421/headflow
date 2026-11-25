@@ -33,6 +33,10 @@ function localizedText(lang: string, values: { ru: string; ky: string; en: strin
   return values.ru;
 }
 
+function safeImageUrl(value: string | null) {
+  return value && value.length <= 2048 && !/^data:/i.test(value) ? value : null;
+}
+
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true });
 });
@@ -40,13 +44,41 @@ app.get("/api/health", (_request, response) => {
 app.get("/api/products", async (request, response) => {
   const requestedLanguage = String(request.query.lang ?? "ru");
   const lang = supportedLanguages.has(requestedLanguage) ? requestedLanguage : "ru";
+  const requestedLimit = Number(request.query.limit ?? 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100) : 100;
   const products = await prisma.product.findMany({
-    include: {
-      category: true,
+    select: {
+      id: true,
+      i18nKey: true,
+      title_ru: true,
+      title_ky: true,
+      title_en: true,
+      brand: true,
+      price: true,
+      imageUrl: true,
+      badgeKey: true,
+      energyClass: true,
+      pressure: true,
+      power: true,
+      stock: true,
+      description_ru: true,
+      description_ky: true,
+      description_en: true,
+      category: {
+        select: {
+          id: true,
+          slug: true,
+          i18nKey: true,
+          name_ru: true,
+          name_ky: true,
+          name_en: true,
+        },
+      },
     },
     orderBy: {
       title_ru: "asc",
     },
+    take: limit,
   });
 
   return response.json({
@@ -61,8 +93,8 @@ app.get("/api/products", async (request, response) => {
       brand: product.brand,
       categorySlug: product.category.slug,
       price: product.price,
-      image: product.imageUrl,
-      imageUrl: product.imageUrl,
+      image: safeImageUrl(product.imageUrl),
+      imageUrl: safeImageUrl(product.imageUrl),
       badgeKey: product.badgeKey,
       badge: `products.badges.${product.badgeKey}`,
       energyClass: product.energyClass,

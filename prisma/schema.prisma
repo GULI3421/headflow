@@ -12,6 +12,20 @@ enum LeadType {
   calculator
 }
 
+enum OrderStatus {
+  NEW
+  IN_PROGRESS
+  COMPLETED
+}
+
+type OrderItem {
+  name      String
+  variant   String?
+  quantity  Int
+  unitPrice Float
+  lineTotal Float
+}
+
 model Category {
   id      String @id @default(auto()) @map("_id") @db.ObjectId
   name_ru String
@@ -79,6 +93,22 @@ model Lead {
   @@index([type])
   @@index([createdAt])
   @@map("leads")
+}
+
+model Order {
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderNumber     String      @unique
+  createdAt       DateTime    @default(now())
+  customerName    String
+  customerPhone   String
+  customerComment String?
+  items           OrderItem[]
+  totalAmount     Float
+  status          OrderStatus @default(NEW)
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("orders")
 }
 
 model AdminUser {

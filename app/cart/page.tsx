@@ -5,8 +5,9 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { getProductImageUrl } from "@/src/lib/appwrite";
-import { downloadOrderPdf, type OrderPdfData } from "@/lib/order-pdf";
-import { listFavoriteProductDocuments, type ProductDocument } from "@/src/lib/products-api";
+import { normalizePhone, validatePhone } from "@/lib/phone";
+import type { OrderPdfData } from "@/lib/order-pdf";
+import { listCartProductDocuments, type CartProductDocument } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 import { useCartStore } from "@/store/cart-store";
 
@@ -14,10 +15,10 @@ type HydratedCartItem = {
   id: string;
   quantity: number;
   variantPower?: string;
-  productData: ProductDocument;
+  productData: CartProductDocument;
 };
 
-function productTitle(product: ProductDocument, language: string, fallback: string) {
+function productTitle(product: CartProductDocument, language: string, fallback: string) {
   if (language.startsWith("ky")) {
     return product.title_ky || product.title_ru || product.title_en || fallback;
   }
@@ -29,11 +30,11 @@ function productTitle(product: ProductDocument, language: string, fallback: stri
   return product.title_ru || product.title_en || product.title_ky || fallback;
 }
 
-function productPrice(product: ProductDocument) {
+function productPrice(product: CartProductDocument) {
   return Number(product.price) || 0;
 }
 
-function productStock(product: ProductDocument) {
+function productStock(product: CartProductDocument) {
   const stock = product.stockQuantity ?? product.stock;
   return typeof stock === "number" && Number.isFinite(stock) ? stock : undefined;
 }
@@ -46,13 +47,18 @@ export default function CartPage() {
   const updateCartQuantity = useCartStore((state) => state.updateQuantity);
   const removeCartItem = useCartStore((state) => state.removeItem);
   const clearCart = useCartStore((state) => state.clearCart);
-  const [productDataByCartId, setProductDataByCartId] = useState<Record<string, ProductDocument>>({});
+  const [productDataByCartId, setProductDataByCartId] = useState<Record<string, CartProductDocument>>({});
   const [loading, setLoading] = useState(true);
+  const [cartLoadError, setCartLoadError] = useState("");
+  const [unavailableCartIds, setUnavailableCartIds] = useState<string[]>([]);
+  const [cartLoadAttempt, setCartLoadAttempt] = useState(0);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [comment, setComment] = useState("");
   const [lastOrder, setLastOrder] = useState<OrderPdfData | null>(null);
   const [pdfError, setPdfError] = useState("");
+  const [orderError, setOrderError] = useState("");
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const cartProductIdentity = useMemo(
@@ -71,19 +77,25 @@ export default function CartPage() {
       try {
         if (cartItems.length === 0) {
           setProductDataByCartId({});
+          setCartLoadError("");
+          setUnavailableCartIds([]);
           setLoading(false);
           return;
         }
 
         const itemsToLoad = cartItems.filter((item) => !productDataByCartId[item.id]);
         if (itemsToLoad.length === 0) {
+          setCartLoadError("");
+          setUnavailableCartIds([]);
           setLoading(false);
           return;
         }
 
         setLoading(true);
+        setCartLoadError("");
+        setUnavailableCartIds([]);
         const ids = itemsToLoad.map((item) => item.productId ?? item.id).filter(Boolean);
-        const response = await listFavoriteProductDocuments(ids);
+        const response = await listCartProductDocuments(ids);
 
         if (ignore) return;
 
@@ -109,7 +121,12 @@ export default function CartPage() {
                 }
               : null;
           })
-          .filter((item): item is { id: string; productData: ProductDocument } => item !== null);
+          .filter((item): item is { id: string; productData: CartProductDocument } => item !== null);
+        const unavailableIds = itemsToLoad
+          .filter((item) => !combined.some((loaded) => loaded.id === item.id))
+          .map((item) => item.id);
+        setUnavailableCartIds(unavailableIds);
+        setCartLoadError(unavailableIds.length > 0 ? t("cartPage.unavailableProducts") : "");
 
         for (const { id, productData } of combined) {
           const cartRecord = itemsToLoad.find((item) => item.id === id);
@@ -125,6 +142,9 @@ export default function CartPage() {
         }));
       } catch (error) {
         console.error("Cart hydration error:", error);
+        if (!ignore) {
+          setCartLoadError(t("cartPage.productsLoadError"));
+        }
       } finally {
         if (!ignore) {
           setLoading(false);
@@ -137,7 +157,7 @@ export default function CartPage() {
     return () => {
       ignore = true;
     };
-  }, [cartProductIdentity, updateCartQuantity]);
+  }, [cartLoadAttempt, cartProductIdentity, t, updateCartQuantity]);
 
   const hydratedItems = useMemo(
     () => cartItems.flatMap((item) => {
@@ -153,6 +173,16 @@ export default function CartPage() {
     () => hydratedItems.reduce((sum, item) => sum + productPrice(item.productData) * item.quantity, 0),
     [hydratedItems],
   );
+  const phoneError = phoneTouched ? validatePhone(phone) : "";
+
+  function retryCartProducts() {
+    setProductDataByCartId({});
+    setCartLoadAttempt((attempt) => attempt + 1);
+  }
+
+  function removeUnavailableProducts() {
+    unavailableCartIds.forEach((id) => removeCartItem(id));
+  }
 
   function updateQuantity(id: string, delta: number) {
     const currentItem = cartItems.find((item) => item.id === id);
@@ -169,6 +199,12 @@ export default function CartPage() {
   async function handleWhatsAppSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting || hydratedItems.length === 0) return;
+    if (cartLoadError || hydratedItems.length !== cartItems.length) return;
+
+    setPhoneTouched(true);
+    if (validatePhone(phone)) return;
+    const normalizedPhone = normalizePhone(phone);
+    const whatsappWindow = window.open("about:blank", "_blank");
 
     const createdAt = new Date();
     const orderDate = new Intl.DateTimeFormat("sv-SE", {
@@ -178,11 +214,11 @@ export default function CartPage() {
       day: "2-digit",
     }).format(createdAt).replaceAll("-", "");
     const orderNumber = `CO-${orderDate}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-    const order: OrderPdfData = {
+    let order: OrderPdfData = {
       orderNumber,
       createdAt: createdAt.toISOString(),
       customerName: name.trim(),
-      customerPhone: phone.trim(),
+      customerPhone: normalizedPhone,
       customerComment: comment.trim(),
       items: hydratedItems.map((item) => {
         const unitPrice = productPrice(item.productData);
@@ -196,29 +232,85 @@ export default function CartPage() {
       }),
       total,
     };
-    setLastOrder(order);
     setPdfError("");
+    setOrderError("");
     setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderNumber: order.orderNumber,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerComment: order.customerComment,
+          items: hydratedItems.map((item) => ({
+            productId: item.productData.id,
+            variant: item.variantPower,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+      const result = await response.json() as {
+        order?: {
+          createdAt: string;
+          items: {
+            name: string;
+            variant: string | null;
+            quantity: number;
+            unitPrice: number;
+            lineTotal: number;
+          }[];
+          totalAmount: number;
+        };
+        error?: string;
+      };
+      if (!response.ok || !result.order) throw new Error(result.error || "Не удалось сохранить заказ.");
+      const savedOrder: OrderPdfData = {
+        ...order,
+        createdAt: result.order.createdAt,
+        items: result.order.items.map(({ variant, ...item }) => ({
+          ...item,
+          variant: variant ?? undefined,
+        })),
+        total: result.order.totalAmount,
+      };
+      setLastOrder(savedOrder);
+      order = savedOrder;
+    } catch (error) {
+      whatsappWindow?.close();
+      console.error("Не удалось сохранить заказ", error);
+      setOrderError(error instanceof Error ? error.message : "Не удалось сохранить заказ. Попробуйте ещё раз.");
+      setSubmitting(false);
+      return;
+    }
 
     const itemsListText = hydratedItems
       .map((item, index) => {
-        const lineTotal = productPrice(item.productData) * item.quantity;
+        const savedItem = order.items[index];
+        const lineTotal = savedItem.lineTotal;
         const title = productTitle(item.productData, language, t("cartPage.fallbackProduct"));
-        const variant = item.variantPower ? ` · ${item.variantPower}` : "";
-        return `${index + 1}. ${title}${variant} x ${item.quantity} — ${lineTotal.toLocaleString("ru-RU")} KGS`;
+        const variant = savedItem.variant ? ` · ${savedItem.variant}` : "";
+        return `${index + 1}. ${title}${variant} x ${savedItem.quantity} — ${lineTotal.toLocaleString("ru-RU")} KGS`;
       })
       .join("\n");
 
     const message = t("cartPage.whatsappMessage", {
       name,
-      phone,
+      phone: order.customerPhone,
       items: itemsListText,
-      total: total.toLocaleString("ru-RU"),
+      total: order.total.toLocaleString("ru-RU"),
       orderNumber,
       commentLine: comment.trim() ? `\n${t("cartPage.comment")}: ${comment.trim()}` : "",
     });
 
-    window.open(`https://wa.me/996708605281?text=${encodeURIComponent(message)}`, "_blank");
+    const whatsappUrl = `https://wa.me/996708605281?text=${encodeURIComponent(message)}`;
+    if (whatsappWindow) {
+      whatsappWindow.location.href = whatsappUrl;
+    } else {
+      window.open(whatsappUrl, "_blank");
+    }
 
     await handleDownloadOrderPdf(order);
 
@@ -228,10 +320,10 @@ export default function CartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          phone,
+          phone: order.customerPhone,
           message: [comment.trim(), `Номер заказа: ${orderNumber}`].filter(Boolean).join("\n"),
           items: itemsListText,
-          total: total.toLocaleString("ru-RU"),
+          total: order.total.toLocaleString("ru-RU"),
           type: `${t("cartPage.telegramType")} № ${orderNumber}`,
         }),
       });
@@ -247,9 +339,15 @@ export default function CartPage() {
   }
 
   async function handleDownloadOrderPdf(order: OrderPdfData) {
+    if (validatePhone(order.customerPhone)) {
+      setPdfError("Нельзя скачать PDF: проверьте номер телефона в заказе.");
+      return;
+    }
+
     setPdfDownloading(true);
     setPdfError("");
     try {
+      const { downloadOrderPdf } = await import("@/lib/order-pdf");
       await downloadOrderPdf(order);
     } catch (error) {
       console.error("Failed to download order PDF", error);
@@ -259,7 +357,7 @@ export default function CartPage() {
     }
   }
 
-  if (loading && cartItems.length > 0 && hydratedItems.length === 0) {
+  if (loading && hydratedItems.length === 0) {
     return (
       <div className="min-h-screen bg-white py-20 text-center text-zinc-950 dark:bg-black dark:text-white">
         {t("cartPage.loading")}
@@ -285,7 +383,7 @@ export default function CartPage() {
             </div>
             <button
               className="rounded-lg bg-[#FF4F00] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
-              disabled={pdfDownloading}
+              disabled={pdfDownloading || Boolean(validatePhone(lastOrder.customerPhone))}
               onClick={() => handleDownloadOrderPdf(lastOrder)}
               type="button"
             >
@@ -298,8 +396,36 @@ export default function CartPage() {
             {pdfError}
           </p>
         )}
+        {orderError && (
+          <p role="alert" className="mb-6 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+            {orderError}
+          </p>
+        )}
+        {cartLoadError && (
+          <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-800 dark:text-amber-200">
+            <span>{cartLoadError}</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-md border border-current/20 px-3 py-1.5 text-xs font-bold hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={retryCartProducts}
+                type="button"
+              >
+                {t("cartPage.retryProducts")}
+              </button>
+              {unavailableCartIds.length > 0 && (
+                <button
+                  className="rounded-md border border-current/20 px-3 py-1.5 text-xs font-bold hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={removeUnavailableProducts}
+                  type="button"
+                >
+                  {t("cartPage.removeUnavailableProducts")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
-        {hydratedItems.length === 0 ? (
+        {cartItems.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 py-20 text-center dark:border-zinc-800 dark:bg-zinc-950">
             <p className="mb-6 text-zinc-500 dark:text-zinc-400">{t("cartPage.empty")}</p>
             <Link
@@ -308,6 +434,30 @@ export default function CartPage() {
             >
               {t("cartPage.backToCatalog")}
             </Link>
+          </div>
+        ) : hydratedItems.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-950">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              {cartLoadError || t("cartPage.productsLoadError")}
+            </p>
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <button
+                className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-500"
+                onClick={retryCartProducts}
+                type="button"
+              >
+                {t("cartPage.retryProducts")}
+              </button>
+              {unavailableCartIds.length > 0 && (
+                <button
+                  className="rounded-xl border border-zinc-300 px-5 py-3 text-sm font-bold transition hover:border-orange-500 dark:border-zinc-700"
+                  onClick={removeUnavailableProducts}
+                  type="button"
+                >
+                  {t("cartPage.removeUnavailableProducts")}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -416,13 +566,24 @@ export default function CartPage() {
                 <label className="grid gap-2 text-sm font-bold">
                   {t("cartPage.phone")}
                   <input
-                    className="h-12 rounded-xl border border-zinc-200 bg-white px-4 font-normal text-zinc-950 outline-none focus:border-orange-500 dark:border-zinc-800 dark:bg-black dark:text-white"
+                    aria-describedby={phoneError ? "cart-phone-error" : undefined}
+                    aria-invalid={Boolean(phoneError)}
+                    className={`h-12 rounded-xl border bg-white px-4 font-normal text-zinc-950 outline-none focus:border-orange-500 dark:bg-black dark:text-white ${
+                      phoneError
+                        ? "border-red-500 dark:border-red-500"
+                        : "border-zinc-200 dark:border-zinc-800"
+                    }`}
                     onChange={(event) => setPhone(event.target.value)}
+                    onBlur={() => setPhoneTouched(true)}
                     placeholder={t("cartPage.phonePlaceholder")}
-                    required
                     type="tel"
                     value={phone}
                   />
+                  {phoneError && (
+                    <span className="text-xs font-medium text-red-600 dark:text-red-400" id="cart-phone-error" role="alert">
+                      {phoneError}
+                    </span>
+                  )}
                 </label>
                 <label className="grid gap-2 text-sm font-bold">
                   {t("cartPage.comment")}
@@ -437,12 +598,15 @@ export default function CartPage() {
 
               <button
                 className="w-full rounded-xl bg-orange-600 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
-                disabled={submitting || pdfDownloading}
+                disabled={submitting || pdfDownloading || loading || Boolean(cartLoadError) || hydratedItems.length !== cartItems.length}
                 type="submit"
               >
                 {submitting ? t("cartPage.processing") : t("cartPage.submit")}
               </button>
               <p className="text-center text-xs leading-5 text-zinc-500">{t("cartPage.note")}</p>
+              <Link className="block text-center text-sm font-semibold text-orange-600 underline-offset-4 hover:underline dark:text-orange-400" href="/orders">
+                {t("cartPage.ordersLink")}
+              </Link>
             </form>
           </div>
         )}

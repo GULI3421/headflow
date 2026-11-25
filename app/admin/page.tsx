@@ -7,13 +7,14 @@ import { getProductImageUrl } from "@/src/lib/appwrite";
 import {
   createProduct,
   deleteProduct,
-  listProductDocuments,
+  listAdminProductDocuments,
   type ProductDocument,
   updateProduct,
 } from "@/src/lib/products-api";
 import { useClientMounted } from "@/components/use-client-mounted";
 import { catalogCategories, subcategoryMap } from "@/lib/catalog";
 import { getStockStatus, LOW_STOCK_THRESHOLD } from "@/lib/stock-status";
+import { AdminOrdersPanel } from "./orders-panel";
 
 type ProductImageFormItem = {
   id: string;
@@ -299,7 +300,7 @@ export default function AdminPage() {
     setProductsError("");
 
     try {
-      const response = await listProductDocuments();
+      const response = await listAdminProductDocuments();
 
       setProducts(response.documents);
     } catch (error) {
@@ -842,6 +843,12 @@ export default function AdminPage() {
             <p className="mt-3 text-sm text-black/55 dark:text-white/55">Вы вошли как {user.email}</p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <a
+              className="inline-flex h-11 items-center gap-2 rounded-md border border-[#FF4F00]/50 px-4 text-sm font-bold text-[#d94300] transition hover:bg-[#FF4F00]/10 dark:text-[#ff7640]"
+              href="#orders"
+            >
+              Заказы
+            </a>
             <button
               className="inline-flex h-11 items-center gap-2 rounded-md border border-black/10 px-4 text-sm font-bold transition hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
               onClick={handleLogout}
@@ -868,6 +875,8 @@ export default function AdminPage() {
         {notice && !productsError && (
           <p role="status" className="mt-6 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-700 dark:text-emerald-300">{notice}</p>
         )}
+
+        <AdminOrdersPanel />
 
         <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">

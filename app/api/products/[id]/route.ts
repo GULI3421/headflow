@@ -9,6 +9,10 @@ function validId(id: string) {
   return /^[\da-f]{24}$/i.test(id);
 }
 
+function safeImageUrl(imageUrl: string | null) {
+  return imageUrl && imageUrl.length <= 2048 && !/^data:/i.test(imageUrl) ? imageUrl : null;
+}
+
 export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params;
   if (!validId(id)) return NextResponse.json({ error: "Product not found." }, { status: 404 });
@@ -16,7 +20,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   try {
     const product = await prisma.product.findUnique({ where: { id } });
     return product
-      ? NextResponse.json(product)
+      ? NextResponse.json({ ...product, imageUrl: safeImageUrl(product.imageUrl) })
       : NextResponse.json({ error: "Product not found." }, { status: 404 });
   } catch (error) {
     console.error("Failed to read MongoDB product", error);
@@ -86,9 +90,20 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     }
     for (const key of [
       "title_ky", "title_en", "description_ru", "description_ky", "description_en",
-      "imageUrl", "subcategory", "description", "brand", "badgeKey", "energyClass", "pressure", "power",
+      "subcategory", "description", "brand", "badgeKey", "energyClass", "pressure", "power",
     ] as const) {
       if (typeof data[key] === "string") fields[key] = data[key];
+    }
+    if ("imageUrl" in data) {
+      if (data.imageUrl === null || data.imageUrl === "") {
+        fields.imageUrl = null;
+      } else if (typeof data.imageUrl !== "string" || data.imageUrl.length > 2048 || /^data:/i.test(data.imageUrl)) {
+        return NextResponse.json({
+          error: "Укажите URL или путь загруженного изображения, а не встроенные данные изображения.",
+        }, { status: 400 });
+      } else {
+        fields.imageUrl = data.imageUrl.trim();
+      }
     }
     for (const key of ["certificateUrl", "certificateFileName", "passportUrl", "passportFileName"] as const) {
       if (!(key in data)) continue;

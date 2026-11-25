@@ -46,8 +46,16 @@ export type LeadPayload = {
 };
 
 type ProductList = {
-  total: number;
+  total?: number;
   documents: ProductDocument[];
+};
+
+export type CartProductDocument = Pick<ProductDocument, "id" | "title_ru" | "price"> &
+  Partial<Pick<ProductDocument, "title_ky" | "title_en" | "stock" | "stockQuantity" | "powerVariants" | "image_id" | "imageUrl">>;
+
+type CartProductList = {
+  total: number;
+  documents: CartProductDocument[];
 };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -77,7 +85,7 @@ export function listProductDocuments(
   limit = 100,
   searchTerm?: string | null,
 ) {
-  const params = new URLSearchParams({ limit: String(limit) });
+  const params = new URLSearchParams({ limit: String(limit), projection: "card" });
   if (category) params.set("category", category);
   if (subcategory) params.set("subcategory", subcategory);
   if (searchTerm?.trim()) params.set("search", searchTerm.trim());
@@ -85,10 +93,26 @@ export function listProductDocuments(
   return request<ProductList>(`/api/products?${params}`);
 }
 
+export function listAdminProductDocuments(limit = 100) {
+  const params = new URLSearchParams({ limit: String(limit), projection: "admin" });
+  return request<ProductList>(`/api/products?${params}`);
+}
+
+export function getProductCount() {
+  return request<{ total: number }>("/api/products?countOnly=true");
+}
+
 export function listFavoriteProductDocuments(ids: string[]) {
   if (ids.length === 0) return Promise.resolve({ total: 0, documents: [] });
-  const params = new URLSearchParams({ ids: ids.join(",") });
+  const params = new URLSearchParams({ ids: ids.join(","), projection: "card" });
   return request<ProductList>(`/api/products?${params}`);
+}
+
+export function listCartProductDocuments(ids: string[]) {
+  if (ids.length === 0) return Promise.resolve({ total: 0, documents: [] });
+  const params = new URLSearchParams({ ids: ids.join(",") });
+  params.set("projection", "cart");
+  return request<CartProductList>(`/api/products?${params}`);
 }
 
 export function getProductDocument(id: string) {

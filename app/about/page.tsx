@@ -6,7 +6,7 @@ import { Award, CheckCircle2, Handshake, ShieldCheck, Wrench } from "lucide-reac
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClientMounted } from "@/components/use-client-mounted";
-import { listProductDocuments } from "@/src/lib/products-api";
+import { getProductCount } from "@/src/lib/products-api";
 import "@/src/i18n/config";
 
 const fadeIn = {
@@ -41,7 +41,7 @@ export default function AboutPage() {
 
     async function loadProductStats() {
       try {
-        const response = await listProductDocuments();
+        const response = await getProductCount();
 
         if (!ignore) {
           setProductCount(response.total);

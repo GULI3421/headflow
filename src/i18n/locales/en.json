@@ -15,6 +15,7 @@
     "calculator": "Calculator",
     "city": "Bishkek",
     "cart": "Cart",
+    "orders": "Orders",
     "openMenu": "Open menu",
     "about": "About",
     "contacts": "Contacts",
@@ -108,6 +109,10 @@
     "namePlaceholder": "Your name",
     "phone": "Phone",
     "phonePlaceholder": "+996",
+    "productsLoadError": "Could not load cart items. Check your connection and try again.",
+    "unavailableProducts": "Some items in the cart are no longer available.",
+    "retryProducts": "Retry loading",
+    "removeUnavailableProducts": "Remove unavailable items",
     "comment": "Comment or address (optional)",
     "commentPlaceholder": "Delivery address or order notes",
     "submit": "Download PDF and place order",
@@ -118,9 +123,26 @@
     "pdfReadyNote": "You can download the PDF again while this page remains open.",
     "pdfError": "Could not generate the PDF. Select “Download PDF” to try again.",
     "note": "The order PDF downloads automatically; WhatsApp opens to send the request.",
+    "ordersLink": "View orders",
     "fallbackProduct": "Product",
     "whatsappMessage": "Hello! New order from Centr Otopleniya website:\n\nOrder number: {{orderNumber}}\nName: {{name}}\nPhone: {{phone}}{{commentLine}}\n\nItems:\n{{items}}\n\nTotal: {{total}} KGS",
     "telegramType": "Order"
+  },
+  "ordersPage": {
+    "title": "Customer orders",
+    "description": "Browse placed orders, their items, status, and total. Customer contact details are not shown here.",
+    "cartLink": "Go to cart",
+    "loading": "Loading orders…",
+    "loadError": "Could not load the order list.",
+    "empty": "There are no orders yet.",
+    "number": "Order {{number}}",
+    "quantity": "Quantity: {{quantity}}",
+    "total": "Order total",
+    "status": {
+      "new": "New",
+      "inProgress": "In progress",
+      "completed": "Completed"
+    }
   },
   "installationPage": {
     "eyebrow": "Turnkey installation",

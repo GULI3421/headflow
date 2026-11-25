@@ -5,6 +5,36 @@ import { prisma } from "@/src/lib/prisma";
 
 class InvalidProductError extends Error {}
 
+const productCardSelect = {
+  id: true,
+  title_ru: true,
+  title_ky: true,
+  title_en: true,
+  price: true,
+  old_price: true,
+  oldPrice: true,
+  stock: true,
+  stockQuantity: true,
+  powerVariants: true,
+  image_id: true,
+  imageUrl: true,
+  category: true,
+  subcategory: true,
+  description: true,
+  brand: true,
+  badgeKey: true,
+  energyClass: true,
+  pressure: true,
+  power: true,
+  description_ru: true,
+  description_ky: true,
+  description_en: true,
+} satisfies Prisma.ProductSelect;
+
+function safeImageUrl(imageUrl: string | null) {
+  return imageUrl && imageUrl.length <= 2048 && !/^data:/i.test(imageUrl) ? imageUrl : null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -74,13 +104,23 @@ function productData(value: unknown): Prisma.ProductUncheckedCreateInput {
     data.stock = stock;
   }
 
+  const imageUrl = value.imageUrl;
+  if (imageUrl !== undefined) {
+    if (imageUrl === null || imageUrl === "") {
+      data.imageUrl = null;
+    } else if (typeof imageUrl !== "string" || imageUrl.length > 2048 || /^data:/i.test(imageUrl)) {
+      throw new InvalidProductError("Укажите URL или путь загруженного изображения, а не встроенные данные изображения.");
+    } else {
+      data.imageUrl = imageUrl.trim();
+    }
+  }
+
   const optionalStrings = [
     "title_ky",
     "title_en",
     "description_ru",
     "description_ky",
     "description_en",
-    "imageUrl",
     "subcategory",
     "description",
     "brand",
@@ -120,6 +160,8 @@ function productData(value: unknown): Prisma.ProductUncheckedCreateInput {
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  const cartProjection = params.get("projection") === "cart";
+  const adminProjection = params.get("projection") === "admin";
   const ids = params.get("ids")?.split(",").filter((id) => /^[\da-f]{24}$/i.test(id));
   const exclude = params.get("exclude");
   const where: Prisma.ProductWhereInput = {};
@@ -139,14 +181,51 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (params.get("countOnly") === "true") {
+      const total = await prisma.product.count({ where });
+      return NextResponse.json({ total });
+    }
+
     const requestedLimit = Number(params.get("limit") ?? (ids?.length || 100));
     const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 100;
-    const [documents, total] = await Promise.all([
-      prisma.product.findMany({ where, take: limit }),
-      prisma.product.count({ where }),
-    ]);
+    if (cartProjection) {
+      const documents = await prisma.product.findMany({
+        where,
+        take: limit,
+        select: {
+          id: true,
+          title_ru: true,
+          title_ky: true,
+          title_en: true,
+          price: true,
+          stock: true,
+          stockQuantity: true,
+          powerVariants: true,
+          image_id: true,
+          imageUrl: true,
+        },
+      });
+      return NextResponse.json({
+        total: documents.length,
+        documents: documents.map((document) => ({ ...document, imageUrl: safeImageUrl(document.imageUrl) })),
+      });
+    }
 
-    return NextResponse.json({ total, documents });
+    if (adminProjection) {
+      const documents = await prisma.product.findMany({ where, take: limit });
+      return NextResponse.json({
+        documents: documents.map((document) => ({ ...document, imageUrl: safeImageUrl(document.imageUrl) })),
+      });
+    }
+
+    const documents = await prisma.product.findMany({
+      where,
+      take: limit,
+      select: productCardSelect,
+    });
+    return NextResponse.json({
+      documents: documents.map((document) => ({ ...document, imageUrl: safeImageUrl(document.imageUrl) })),
+    });
   } catch (error) {
     console.error("Failed to query MongoDB products", error);
     return NextResponse.json({ error: "Unable to load products." }, { status: 500 });
