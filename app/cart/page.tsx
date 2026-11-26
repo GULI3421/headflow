@@ -173,7 +173,8 @@ export default function CartPage() {
     () => hydratedItems.reduce((sum, item) => sum + productPrice(item.productData) * item.quantity, 0),
     [hydratedItems],
   );
-  const phoneError = phoneTouched ? validatePhone(phone) : "";
+  const phoneError = phoneTouched || phone.length > 0 ? validatePhone(phone) : "";
+  const phoneIsValid = validatePhone(phone) === "";
 
   function retryCartProducts() {
     setProductDataByCartId({});
@@ -334,6 +335,7 @@ export default function CartPage() {
     clearCart();
     setName("");
     setPhone("");
+    setPhoneTouched(false);
     setComment("");
     setSubmitting(false);
   }
@@ -598,7 +600,7 @@ export default function CartPage() {
 
               <button
                 className="w-full rounded-xl bg-orange-600 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
-                disabled={submitting || pdfDownloading || loading || Boolean(cartLoadError) || hydratedItems.length !== cartItems.length}
+                disabled={!phoneIsValid || submitting || pdfDownloading || loading || Boolean(cartLoadError) || hydratedItems.length !== cartItems.length}
                 type="submit"
               >
                 {submitting ? t("cartPage.processing") : t("cartPage.submit")}

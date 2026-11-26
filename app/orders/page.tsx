@@ -3,28 +3,23 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Download, Loader2 } from "lucide-react";
 import "@/src/i18n/config";
 
-type OrderStatus = "NEW" | "IN_PROGRESS" | "COMPLETED";
 type PublicOrder = {
   orderNumber: string;
   createdAt: string;
-  status: OrderStatus;
   items: { name: string; variant: string | null; quantity: number }[];
   totalAmount: number;
 };
-
-function statusKey(status: OrderStatus) {
-  if (status === "IN_PROGRESS") return "inProgress";
-  if (status === "COMPLETED") return "completed";
-  return "new";
-}
 
 export default function OrdersPage() {
   const { i18n, t } = useTranslation();
   const [orders, setOrders] = useState<PublicOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pdfError, setPdfError] = useState("");
+  const [downloadingOrderNumber, setDownloadingOrderNumber] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -56,11 +51,35 @@ export default function OrdersPage() {
   const locale = i18n.resolvedLanguage?.startsWith("ky")
     ? "ky-KG"
     : i18n.resolvedLanguage?.startsWith("en")
-      ? "en"
+      ? "en-GB"
       : "ru-RU";
 
+  async function downloadOrderPdf(order: PublicOrder) {
+    setDownloadingOrderNumber(order.orderNumber);
+    setPdfError("");
+
+    try {
+      const { downloadOrderSummaryPdf } = await import("@/lib/order-pdf");
+      await downloadOrderSummaryPdf({
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt,
+        items: order.items.map(({ name, variant, quantity }) => ({
+          name,
+          variant: variant ?? undefined,
+          quantity,
+        })),
+        total: order.totalAmount,
+      });
+    } catch (downloadError) {
+      console.error("Не удалось скачать публичный PDF заказа", downloadError);
+      setPdfError(downloadError instanceof Error ? downloadError.message : t("ordersPage.pdfError"));
+    } finally {
+      setDownloadingOrderNumber(null);
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-white px-5 pb-20 pt-32 text-zinc-950 dark:bg-black dark:text-white md:px-10">
+    <div className="min-h-screen bg-white px-5 pb-20 pt-36 text-zinc-950 dark:bg-black dark:text-white md:px-10 md:pt-40">
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -80,6 +99,11 @@ export default function OrdersPage() {
             {error}
           </p>
         )}
+        {pdfError && (
+          <p role="alert" className="mt-6 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+            {pdfError}
+          </p>
+        )}
 
         {loading ? (
           <p className="mt-8 rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -90,39 +114,51 @@ export default function OrdersPage() {
             {t("ordersPage.empty")}
           </p>
         ) : orders.length > 0 ? (
-          <div className="mt-8 grid gap-4">
-            {orders.map((order) => (
-              <article className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-950" key={order.orderNumber}>
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-200 pb-4 dark:border-zinc-800">
-                  <div>
-                    <h2 className="text-lg font-black">{t("ordersPage.number", { number: order.orderNumber })}</h2>
-                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                      {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(order.createdAt))}
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-700 dark:text-orange-300">
-                    {t(`ordersPage.status.${statusKey(order.status)}`)}
-                  </span>
-                </div>
-
-                <ul className="grid gap-2 py-4 text-sm">
-                  {order.items.map((item, index) => (
-                    <li className="flex flex-wrap justify-between gap-x-4 gap-y-1" key={`${item.name}-${item.variant ?? ""}-${index}`}>
-                      <span>
-                        {item.name}
-                        {item.variant ? ` · ${item.variant}` : ""}
-                      </span>
-                      <span className="text-zinc-500 dark:text-zinc-400">{t("ordersPage.quantity", { quantity: item.quantity })}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
-                  <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">{t("ordersPage.total")}</span>
-                  <span className="text-lg font-black text-[#FF4F00]">{order.totalAmount.toLocaleString(locale)} KGS</span>
-                </div>
-              </article>
-            ))}
+          <div className="mt-8 overflow-x-auto rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+            <table aria-label={t("ordersPage.tableLabel")} className="w-full min-w-[640px] border-collapse text-left">
+              <thead className="bg-zinc-100 text-xs font-bold uppercase tracking-wide text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                <tr>
+                  <th className="w-20 px-5 py-4" scope="col">{t("ordersPage.rowNumber")}</th>
+                  <th className="px-5 py-4" scope="col">{t("ordersPage.date")}</th>
+                  <th className="px-5 py-4" scope="col">{t("ordersPage.amount")}</th>
+                  <th className="w-36 px-5 py-4 text-right" scope="col">{t("ordersPage.downloadPdf")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {orders.map((order, index) => (
+                  <tr className="transition-colors hover:bg-orange-500/[0.04]" key={order.orderNumber}>
+                    <td className="px-5 py-4 text-sm font-bold text-zinc-500 dark:text-zinc-400">{index + 1}</td>
+                    <td className="whitespace-nowrap px-5 py-4 text-sm font-semibold">
+                      {new Intl.DateTimeFormat(locale, {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "Asia/Bishkek",
+                      }).format(new Date(order.createdAt)).replace(", ", " ")}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-[#FF4F00]">
+                      {new Intl.NumberFormat(locale).format(order.totalAmount)} сом
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button
+                        aria-label={`${t("ordersPage.downloadPdf")} ${index + 1}`}
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#FF4F00] px-3 py-2 text-sm font-bold text-white transition hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
+                        disabled={downloadingOrderNumber !== null}
+                        onClick={() => void downloadOrderPdf(order)}
+                        type="button"
+                      >
+                        {downloadingOrderNumber === order.orderNumber
+                          ? <Loader2 className="animate-spin" size={16} aria-hidden />
+                          : <Download size={16} aria-hidden />}
+                        <span>{t("ordersPage.downloadPdf")}</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : null}
       </div>

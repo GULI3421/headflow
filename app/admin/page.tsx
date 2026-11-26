@@ -1,12 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { type ClipboardEvent as ReactClipboardEvent, type DragEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { type ClipboardEvent as ReactClipboardEvent, type DragEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, FileText, ImagePlus, Loader2, Package, PackageCheck, PackageX, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { getProductImageUrl } from "@/src/lib/appwrite";
 import {
   createProduct,
   deleteProduct,
+  getProductDocument,
   listAdminProductDocuments,
   type ProductDocument,
   updateProduct,
@@ -146,6 +149,52 @@ function isProductImageReference(imageId: string) {
   return true;
 }
 
+function productToForm(product: ProductDocument): ProductFormState {
+  return {
+    title: productTitle(product),
+    price: String(product.price ?? ""),
+    old_price: String(product.oldPrice ?? product.old_price ?? ""),
+    stock: String(product.stockQuantity ?? product.stock ?? 0),
+    powerVariants: Array.isArray(product.powerVariants) ? product.powerVariants.map((variant) => ({
+      power: variant.power,
+      price: String(variant.price),
+      oldPrice: variant.oldPrice == null ? "" : String(variant.oldPrice),
+      stockQuantity: String(variant.stockQuantity),
+    })) : normalizeStringArray(product.power_options).map((power) => ({ power, price: String(product.price), oldPrice: "", stockQuantity: String(product.stockQuantity ?? product.stock ?? 0) })),
+    category: product.category && catalogCategories.includes(product.category) ? product.category : "Котлы",
+    subcategory:
+      product.subcategory && subcategoryMap[product.category]?.includes(product.subcategory)
+        ? product.subcategory
+        : "",
+    description: product.description ?? "",
+    powerOptions: normalizeStringArray(product.power_options),
+    images: normalizeImageIds(product.image_id)
+      .filter(isProductImageReference)
+      .slice(0, 3)
+      .map((imageId) => ({
+        id: crypto.randomUUID(),
+        type: "value",
+        value: imageId,
+        previewUrl: getProductImageUrl(imageId),
+      })),
+    specs: normalizeStringArray(product.specs),
+    specKeyInput: "",
+    specValueInput: "",
+    documentation: {
+      certificate: {
+        url: product.certificateUrl ?? "",
+        fileName: product.certificateFileName ?? "",
+        file: null,
+      },
+      passport: {
+        url: product.passportUrl ?? "",
+        fileName: product.passportFileName ?? "",
+        file: null,
+      },
+    },
+  };
+}
+
 function revokeLocalImagePreviews(images: ProductImageFormItem[]) {
   images.forEach((image) => {
     if (image.type === "file") {
@@ -177,6 +226,8 @@ function getApiErrorMessage(error: unknown) {
 
 export default function AdminPage() {
   const mounted = useClientMounted();
+  const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -192,6 +243,7 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductDocument | null>(null);
+  const initializedProductRoute = useRef("");
   const [form, setForm] = useState<ProductFormState>(createEmptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -202,6 +254,14 @@ export default function AdminPage() {
   const [priceListSaving, setPriceListSaving] = useState(false);
 
   const isEditing = Boolean(editingProduct);
+  const isDashboard = pathname === "/admin";
+  const isProductsPage = pathname === "/admin/products";
+  const isOrdersPage = pathname === "/admin/orders";
+  const isPriceListPage = pathname === "/admin/price-list";
+  const isProductFormPage = pathname === "/admin/products/new" || /^\/admin\/products\/[^/]+$/.test(pathname);
+  const routeProductId = pathname.startsWith("/admin/products/") && pathname !== "/admin/products/new"
+    ? pathname.slice("/admin/products/".length)
+    : null;
   const availableSubcategories = subcategoryMap[form.category] ?? [];
 
   const sortedProducts = useMemo(
@@ -269,6 +329,71 @@ export default function AdminPage() {
     loadProducts();
     loadPriceList();
   }, [mounted, user]);
+
+  useEffect(() => {
+    if (!mounted || pathname !== "/admin" || !window.location.hash) return;
+    const legacyRoutes: Record<string, string> = {
+      "#orders": "/admin/orders",
+      "#products": "/admin/products",
+      "#products-table": "/admin/products",
+      "#price-list": "/admin/price-list",
+    };
+    const destination = legacyRoutes[window.location.hash];
+    if (destination) router.replace(destination);
+  }, [mounted, pathname, router]);
+
+  useEffect(() => {
+    if (!isProductsPage) return;
+    const filter = new URLSearchParams(window.location.search).get("stock");
+    setStockFilter(filter === "inStock" || filter === "lowStock" || filter === "outOfStock" ? filter : "all");
+  }, [isProductsPage]);
+
+  useEffect(() => {
+    if (!isProductFormPage) {
+      initializedProductRoute.current = "";
+      setModalOpen(false);
+      return;
+    }
+    if (!user || productsLoading || initializedProductRoute.current === pathname) return;
+
+    if (!routeProductId) {
+      initializedProductRoute.current = pathname;
+      setEditingProduct(null);
+      setForm(createEmptyForm());
+      setProductsError("");
+      setModalOpen(true);
+      return;
+    }
+
+    const product = products.find((item) => item.id === routeProductId);
+    if (product) {
+      initializedProductRoute.current = pathname;
+      setEditingProduct(product);
+      setForm(productToForm(product));
+      setProductsError("");
+      setModalOpen(true);
+      return;
+    }
+
+    setModalOpen(false);
+    let active = true;
+    void getProductDocument(routeProductId).then((loadedProduct) => {
+      if (!active) return;
+      initializedProductRoute.current = pathname;
+      setEditingProduct(loadedProduct);
+      setForm(productToForm(loadedProduct));
+      setProductsError("");
+      setModalOpen(true);
+    }).catch((error: unknown) => {
+      if (active) {
+        initializedProductRoute.current = pathname;
+        setProductsError(`Не удалось загрузить товар: ${getApiErrorMessage(error)}`);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [isProductFormPage, pathname, products, productsLoading, routeProductId, user]);
 
   async function loadPriceList() {
     try {
@@ -348,60 +473,8 @@ export default function AdminPage() {
     }
   }
 
-  function openCreateModal() {
-    setEditingProduct(null);
-    setForm(createEmptyForm());
-    setProductsError("");
-    setModalOpen(true);
-  }
-
   function openEditModal(product: ProductDocument) {
-    setEditingProduct(product);
-    setForm({
-      title: productTitle(product),
-      price: String(product.price ?? ""),
-      old_price: String(product.oldPrice ?? product.old_price ?? ""),
-      stock: String(product.stockQuantity ?? product.stock ?? 0),
-      powerVariants: Array.isArray(product.powerVariants) ? product.powerVariants.map((variant) => ({
-        power: variant.power,
-        price: String(variant.price),
-        oldPrice: variant.oldPrice == null ? "" : String(variant.oldPrice),
-        stockQuantity: String(variant.stockQuantity),
-      })) : normalizeStringArray(product.power_options).map((power) => ({ power, price: String(product.price), oldPrice: "", stockQuantity: String(product.stockQuantity ?? product.stock ?? 0) })),
-      category: product.category && catalogCategories.includes(product.category) ? product.category : "Котлы",
-      subcategory:
-        product.subcategory && subcategoryMap[product.category]?.includes(product.subcategory)
-          ? product.subcategory
-          : "",
-      description: product.description ?? "",
-      powerOptions: normalizeStringArray(product.power_options),
-      images: normalizeImageIds(product.image_id)
-        .filter(isProductImageReference)
-        .slice(0, 3)
-        .map((imageId) => ({
-          id: crypto.randomUUID(),
-          type: "value",
-          value: imageId,
-          previewUrl: getProductImageUrl(imageId),
-        })),
-      specs: normalizeStringArray(product.specs),
-      specKeyInput: "",
-      specValueInput: "",
-      documentation: {
-        certificate: {
-          url: product.certificateUrl ?? "",
-          fileName: product.certificateFileName ?? "",
-          file: null,
-        },
-        passport: {
-          url: product.passportUrl ?? "",
-          fileName: product.passportFileName ?? "",
-          file: null,
-        },
-      },
-    });
-    setProductsError("");
-    setModalOpen(true);
+    router.push(`/admin/products/${encodeURIComponent(product.id)}`);
   }
 
   function closeModal() {
@@ -410,6 +483,7 @@ export default function AdminPage() {
     setModalOpen(false);
     setEditingProduct(null);
     setForm(createEmptyForm());
+    router.push("/admin/products");
   }
 
   function setProductPdf(key: "certificate" | "passport", file: File | null) {
@@ -743,6 +817,7 @@ export default function AdminPage() {
       setEditingProduct(null);
       revokeLocalImagePreviews(form.images);
       setForm(createEmptyForm());
+      router.push("/admin/products");
     } catch (error) {
       console.error("Не удалось сохранить товар", error);
       setProductsError(`Не удалось сохранить товар: ${getApiErrorMessage(error)}`);
@@ -829,8 +904,7 @@ export default function AdminPage() {
   }
 
   function filterByStock(filter: "all" | "inStock" | "lowStock" | "outOfStock") {
-    setStockFilter(filter);
-    document.getElementById("products-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    router.push(filter === "all" ? "/admin/products" : `/admin/products?stock=${filter}`);
   }
 
   return (
@@ -839,16 +913,12 @@ export default function AdminPage() {
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.16em] text-[#FF4F00]">HeatFlow · управление</p>
-            <h1 className="mt-2 text-4xl font-black">Товары</h1>
+            <h1 className="mt-2 text-4xl font-black">
+              {isDashboard ? "Обзор" : isOrdersPage ? "Заказы" : isPriceListPage ? "Прайс-лист" : isProductFormPage ? (routeProductId ? "Редактирование товара" : "Новый товар") : "Товары"}
+            </h1>
             <p className="mt-3 text-sm text-black/55 dark:text-white/55">Вы вошли как {user.email}</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <a
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-[#FF4F00]/50 px-4 text-sm font-bold text-[#d94300] transition hover:bg-[#FF4F00]/10 dark:text-[#ff7640]"
-              href="#orders"
-            >
-              Заказы
-            </a>
             <button
               className="inline-flex h-11 items-center gap-2 rounded-md border border-black/10 px-4 text-sm font-bold transition hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
               onClick={handleLogout}
@@ -856,16 +926,35 @@ export default function AdminPage() {
             >
               Выйти
             </button>
-            <button
-              className="inline-flex h-11 items-center gap-2 rounded-md bg-[#FF4F00] px-4 text-sm font-bold text-white transition hover:bg-[#e64800]"
-              onClick={openCreateModal}
-              type="button"
-            >
-              <Plus size={18} aria-hidden />
-              Добавить товар
-            </button>
+            {(isDashboard || isProductsPage) && (
+              <Link
+                className="inline-flex h-11 items-center gap-2 rounded-md bg-[#FF4F00] px-4 text-sm font-bold text-white transition hover:bg-[#e64800]"
+                href="/admin/products/new"
+              >
+                <Plus size={18} aria-hidden />
+                Добавить товар
+              </Link>
+            )}
           </div>
         </div>
+
+        <nav aria-label="Разделы админки" className="mt-7 flex flex-wrap gap-2 border-b border-black/10 pb-4 dark:border-white/10">
+          {[
+            { href: "/admin", label: "Обзор", active: isDashboard },
+            { href: "/admin/products", label: "Товары", active: isProductsPage || isProductFormPage },
+            { href: "/admin/orders", label: "Заказы", active: isOrdersPage },
+            { href: "/admin/price-list", label: "Прайс-лист", active: isPriceListPage },
+          ].map(({ href, label, active }) => (
+            <Link
+              aria-current={active ? "page" : undefined}
+              className={`rounded-lg px-4 py-2.5 text-sm font-bold transition ${active ? "bg-[#FF4F00] text-white" : "border border-black/10 hover:border-[#FF4F00] hover:text-[#FF4F00] dark:border-white/10"}`}
+              href={href}
+              key={href}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
 
         {productsError && (
           <p role="alert" className="mt-6 rounded-md border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-700 dark:text-red-300">
@@ -875,10 +964,15 @@ export default function AdminPage() {
         {notice && !productsError && (
           <p role="status" className="mt-6 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-700 dark:text-emerald-300">{notice}</p>
         )}
+        {isProductFormPage && !modalOpen && productsLoading && (
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <Loader2 className="animate-spin text-[#FF4F00]" size={32} aria-hidden />
+          </div>
+        )}
 
-        <AdminOrdersPanel />
+        {isOrdersPage && <AdminOrdersPanel />}
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+        {isDashboard && <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
             {([
               { key: "all", label: "Всего товаров", value: inventoryStats.total, icon: Package, accent: "text-[#FF4F00]", borderAccent: "border-l-[#FF4F00]", active: "bg-[#FF4F00]/[0.07]" },
@@ -966,15 +1060,23 @@ export default function AdminPage() {
               </div>
               <a
                 className="shrink-0 rounded-md bg-[#FF4F00]/10 px-3 py-2 text-xs font-bold text-[#FF4F00] transition hover:bg-[#FF4F00]/15"
-                href="#price-list"
+                href="/admin/price-list"
               >
                 {priceList ? "К прайс-листу" : "Загрузить прайс"}
               </a>
             </section>
           </div>
-        </section>
+        </section>}
 
-        <section id="price-list" className="mt-6 scroll-mt-24 rounded-xl border border-black/10 bg-white p-5 shadow-xl shadow-black/5 dark:border-white/10 dark:bg-[#151515]">
+        {isDashboard && (
+          <div className="mt-5 flex flex-wrap gap-3" aria-label="Быстрые переходы">
+            <Link className="rounded-lg border border-black/10 bg-white px-4 py-3 text-sm font-bold transition hover:border-[#FF4F00] hover:text-[#FF4F00] dark:border-white/10 dark:bg-[#151515]" href="/admin/products">Открыть каталог товаров</Link>
+            <Link className="rounded-lg border border-black/10 bg-white px-4 py-3 text-sm font-bold transition hover:border-[#FF4F00] hover:text-[#FF4F00] dark:border-white/10 dark:bg-[#151515]" href="/admin/orders">Перейти к заказам</Link>
+            <Link className="rounded-lg border border-black/10 bg-white px-4 py-3 text-sm font-bold transition hover:border-[#FF4F00] hover:text-[#FF4F00] dark:border-white/10 dark:bg-[#151515]" href="/admin/price-list">Управлять прайс-листом</Link>
+          </div>
+        )}
+
+        {isPriceListPage && <section id="price-list" className="mt-6 rounded-xl border border-black/10 bg-white p-5 shadow-xl shadow-black/5 dark:border-white/10 dark:bg-[#151515]">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
             <div>
               <h2 className="text-xl font-black">Прайс-лист</h2>
@@ -995,9 +1097,9 @@ export default function AdminPage() {
           </form>
           {priceListError && <p role="alert" className="mt-3 text-sm font-semibold text-red-500">{priceListError}</p>}
           {!priceList && !priceListError && <p className="mt-3 rounded-md bg-black/[0.04] px-3 py-2 text-sm font-medium text-black/65 dark:bg-white/[0.06] dark:text-white/70">Прайс-лист ещё не загружен. На сайте пока доступен резервный файл.</p>}
-        </section>
+        </section>}
 
-        <section id="products-table" className="mt-6 scroll-mt-24 overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl shadow-black/5 dark:border-white/10 dark:bg-[#151515]">
+        {isProductsPage && <section id="products-table" className="mt-6 overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl shadow-black/5 dark:border-white/10 dark:bg-[#151515]">
           <div className="grid min-w-0 grid-cols-1 items-end gap-4 border-b border-black/10 p-5 dark:border-white/10 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_minmax(160px,190px)_minmax(170px,190px)_auto]">
             <label className="grid flex-1 gap-2 text-sm font-bold">
               Поиск по названию
@@ -1109,13 +1211,13 @@ export default function AdminPage() {
             </tbody>
           </table>
           </div>
-        </section>
+        </section>}
       </div>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+      {modalOpen && isProductFormPage && (
+        <div className="mt-6">
           <form
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-md border border-white/10 bg-white p-6 text-[#151515] shadow-2xl dark:bg-[#151515] dark:text-white"
+            className={`w-full rounded-md border border-black/10 bg-white p-6 text-[#151515] shadow-xl dark:border-white/10 dark:bg-[#151515] dark:text-white ${isProductFormPage ? "mx-auto max-w-4xl" : "max-h-[90vh] max-w-2xl overflow-y-auto"}`}
             onPaste={handlePaste}
             onSubmit={handleSaveProduct}
           >

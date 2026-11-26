@@ -4,100 +4,92 @@ import { motion } from "framer-motion";
 import { Calculator, Home, Loader2, Phone, Ruler, Send, ThermometerSun, Wrench } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import {
+  calculateHeatingEstimate,
+  insulationMultipliers,
+  type DeliveryMode,
+  type HeatingSource,
+  type InsulationLevel,
+} from "@/lib/heating-estimate";
+import { normalizePhone, validatePhone } from "@/lib/phone";
 import "@/src/i18n/config";
 
 const ceilingHeights = [2.5, 2.8, 3.0, 3.5];
-const insulationLevels = ["poor", "standard", "high"] as const;
-
-const insulationMultipliers: Record<(typeof insulationLevels)[number], number> = {
-  poor: 1.2,
-  standard: 1,
-  high: 0.8,
-};
-
-const prices = {
-  radiatorSection: 1200,
-  pipeMeter: 90,
-  ballValve: 350,
-  bracket: 80,
-  mayevskyValve: 150,
-  installationPerSquareMeter: 450,
-  installationPerRadiator: 800,
-};
+const insulationLevels: InsulationLevel[] = ["poor", "standard", "high"];
 
 function formatMoney(value: number) {
   return Math.round(value).toLocaleString("ru-RU");
 }
 
 export default function CalculatorPage() {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [area, setArea] = useState(100);
-  const [windows, setWindows] = useState(5);
+  const [windows, setWindows] = useState<number | null>(null);
   const [ceilingHeight, setCeilingHeight] = useState(2.8);
-  const [insulation, setInsulation] = useState<(typeof insulationLevels)[number]>("standard");
+  const [insulation, setInsulation] = useState<InsulationLevel>("standard");
+  const [heatingSource, setHeatingSource] = useState<HeatingSource>("gas");
   const [includeInstallation, setIncludeInstallation] = useState(true);
+  const [includeChimney, setIncludeChimney] = useState(true);
+  const [includeUnderfloor, setIncludeUnderfloor] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("none");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [submitError, setSubmitError] = useState("");
 
+  const estimatedWindows = windows ?? Math.max(1, Math.ceil(area / 20));
   const estimate = useMemo(() => {
-    const safeArea = Math.max(1, area);
-    const radiatorCount = Math.max(1, windows);
-    const baseWatts = safeArea * 100;
-    const ceilingMultiplier = ceilingHeight > 2.8 ? 1.15 : 1;
-    const insulationMultiplier = insulationMultipliers[insulation];
-    const totalWatts = baseWatts * ceilingMultiplier * insulationMultiplier;
-    const totalKilowatts = totalWatts / 1000;
-    const totalSections = Math.ceil(totalWatts / 150);
-    const sectionsPerRadiator = Math.max(1, Math.round(totalSections / radiatorCount));
-    const pipeMeters = Math.ceil(safeArea * 2.5);
-    const ballValves = radiatorCount * 2;
-    const brackets = radiatorCount * 4;
-    const mayevskyValves = radiatorCount;
-    const radiatorsCost = totalSections * prices.radiatorSection;
-    const fittingsCost =
-      pipeMeters * prices.pipeMeter +
-      ballValves * prices.ballValve +
-      brackets * prices.bracket +
-      mayevskyValves * prices.mayevskyValve;
-    const installationCost = includeInstallation
-      ? safeArea * prices.installationPerSquareMeter + radiatorCount * prices.installationPerRadiator
-      : 0;
+    return calculateHeatingEstimate({
+      area,
+      windows: estimatedWindows,
+      ceilingHeight,
+      insulation,
+      heatingSource,
+      includeChimney,
+      includeUnderfloor,
+      deliveryMode,
+      includeInstallation,
+    });
+  }, [area, ceilingHeight, deliveryMode, estimatedWindows, heatingSource, includeChimney, includeInstallation, includeUnderfloor, insulation]);
 
-    return {
-      radiatorCount,
-      ceilingMultiplier,
-      insulationMultiplier,
-      totalWatts,
-      totalKilowatts,
-      totalSections,
-      sectionsPerRadiator,
-      pipeMeters,
-      ballValves,
-      brackets,
-      mayevskyValves,
-      radiatorsCost,
-      fittingsCost,
-      installationCost,
-      grandTotal: radiatorsCost + fittingsCost + installationCost,
-    };
-  }, [area, ceilingHeight, includeInstallation, insulation, windows]);
+  const currency = i18n.resolvedLanguage?.startsWith("en") ? "KGS" : "сом";
+  const money = (value: number) => `${formatMoney(value)} ${currency}`;
 
   async function sendEstimate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitStatus("idle");
+    setSubmitError("");
+
+    const name = contactName.trim();
+    const phoneValidationError = validatePhone(contactPhone);
+    setNameError(name ? "" : t("calculatorPage.estimate.nameRequired"));
+    setPhoneError(phoneValidationError);
+    if (!name || phoneValidationError) return;
+
+    const phone = normalizePhone(contactPhone);
     setSubmitStatus("loading");
 
+    const extraItems = [
+      estimate.chimneyCost ? `${t("calculatorPage.options.chimney")}: ${money(estimate.chimneyCost)}` : "",
+      estimate.underfloorCost ? `${t("calculatorPage.options.underfloor")}: ${money(estimate.underfloorCost)}` : "",
+      estimate.deliveryCost ? `${t(`calculatorPage.deliveryOptions.${deliveryMode}`)}: ${money(estimate.deliveryCost)}` : "",
+    ].filter(Boolean);
     const items = [
-      `${t("calculatorPage.summary.area")}: ${area} m2`,
-      `${t("calculatorPage.summary.windows")}: ${estimate.radiatorCount}`,
+      `${t("calculatorPage.summary.area")}: ${estimate.area} m2`,
+      `${t("calculatorPage.summary.windows")}: ${estimate.windows}`,
       `${t("calculatorPage.summary.ceiling")}: ${ceilingHeight} m`,
       `${t("calculatorPage.summary.insulation")}: ${t(`calculatorPage.insulation.${insulation}.title`)}`,
-      `${t("calculatorPage.summary.power")}: ${estimate.totalKilowatts.toFixed(2)} kW`,
-      `${t("calculatorPage.summary.radiators")}: ${estimate.radiatorCount} x ${estimate.sectionsPerRadiator} ${t("calculatorPage.units.sections")}`,
+      `${t("calculatorPage.summary.power")}: ${estimate.heatLossWatts} W`,
+      `${t("calculatorPage.summary.boiler")}: ${t(`calculatorPage.sources.${heatingSource}`)} — ${estimate.recommendedBoilerKilowatts} kW (${money(estimate.boilerCost)})`,
+      `${t("calculatorPage.summary.radiators")}: ${estimate.windows} x ${estimate.sectionsPerRadiator} ${t("calculatorPage.units.sections")}, ${money(estimate.radiatorsCost)}`,
       `${t("calculatorPage.summary.totalSections")}: ${estimate.totalSections}`,
-      `${t("calculatorPage.summary.pipes")}: ${estimate.pipeMeters} m`,
-      `${t("calculatorPage.summary.fittings")}: ${estimate.ballValves} ${t("calculatorPage.units.valves")}, ${estimate.brackets} ${t("calculatorPage.units.brackets")}, ${estimate.mayevskyValves} ${t("calculatorPage.units.mayevsky")}`,
-      `${t("calculatorPage.summary.installation")}: ${includeInstallation ? t("common.yes", { defaultValue: "Yes" }) : t("common.no", { defaultValue: "No" })}`,
+      `${t("calculatorPage.summary.pipes")}: ${estimate.pipeMeters} m, ${money(estimate.pipesCost)}`,
+      `${t("calculatorPage.summary.fittings")}: ${estimate.ballValves} ${t("calculatorPage.units.valves")}, ${estimate.brackets} ${t("calculatorPage.units.brackets")}, ${estimate.airVents} ${t("calculatorPage.units.mayevsky")}, ${money(estimate.accessoriesCost)}`,
+      `${t("calculatorPage.summary.extras")}: ${extraItems.join("; ") || t("calculatorPage.estimate.noExtras")} — ${money(estimate.extrasCost)}`,
+      `${t("calculatorPage.summary.installation")}: ${includeInstallation ? money(estimate.installationCost) : t("calculatorPage.estimate.notIncluded")}`,
+      `${t("calculatorPage.estimate.grandTotal")}: ${money(estimate.grandTotal)}`,
     ].join("\n");
 
     try {
@@ -105,8 +97,8 @@ export default function CalculatorPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: contactName || t("calculatorPage.estimate.clientFallback"),
-          phone: contactPhone || t("calculatorPage.estimate.phoneFallback"),
+          name,
+          phone,
           items,
           total: estimate.grandTotal,
           type: t("calculatorPage.estimate.telegramType"),
@@ -114,21 +106,71 @@ export default function CalculatorPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Telegram estimate request failed");
+        let errorMessage = "";
+        try {
+          const result: unknown = await response.json();
+          if (typeof result === "object" && result !== null && "error" in result && typeof result.error === "string") {
+            errorMessage = result.error;
+          }
+        } catch {
+          // Use the localized fallback when the API response is not JSON.
+        }
+        throw new Error(errorMessage || t("calculatorPage.estimate.error"));
       }
 
       setSubmitStatus("success");
     } catch (error) {
       console.error("Failed to send calculator estimate", error);
+      setSubmitError(
+        error instanceof Error && error.message !== "Failed to fetch"
+          ? error.message
+          : t("calculatorPage.estimate.error"),
+      );
       setSubmitStatus("error");
     }
   }
 
   const breakdownRows = [
-    [t("calculatorPage.estimate.power"), `${estimate.totalKilowatts.toFixed(2)} kW`],
-    [t("calculatorPage.estimate.radiators"), `${formatMoney(estimate.radiatorsCost)} KGS`],
-    [t("calculatorPage.estimate.fittings"), `${formatMoney(estimate.fittingsCost)} KGS`],
-    [t("calculatorPage.estimate.installation"), `${formatMoney(estimate.installationCost)} KGS`],
+    {
+      label: t("calculatorPage.estimate.boiler"),
+      detail: heatingSource === "none"
+        ? t("calculatorPage.estimate.noBoiler")
+        : `${t(`calculatorPage.sources.${heatingSource}`)}, ${estimate.recommendedBoilerKilowatts} kW`,
+      value: money(estimate.boilerCost),
+    },
+    {
+      label: t("calculatorPage.estimate.radiators"),
+      detail: `${estimate.totalSections} ${t("calculatorPage.units.sections")}`,
+      value: money(estimate.radiatorsCost),
+    },
+    {
+      label: t("calculatorPage.estimate.pipes"),
+      detail: `${estimate.pipeMeters} m`,
+      value: money(estimate.pipesCost),
+    },
+    {
+      label: t("calculatorPage.estimate.accessories"),
+      detail: t("calculatorPage.estimate.accessoriesNote", {
+        valves: estimate.ballValves,
+        brackets: estimate.brackets,
+        airVents: estimate.airVents,
+      }),
+      value: money(estimate.accessoriesCost),
+    },
+    {
+      label: t("calculatorPage.estimate.extras"),
+      detail: [
+        estimate.chimneyCost ? `${t("calculatorPage.options.chimney")}: ${money(estimate.chimneyCost)}` : "",
+        estimate.underfloorCost ? `${t("calculatorPage.options.underfloor")}: ${money(estimate.underfloorCost)}` : "",
+        estimate.deliveryCost ? `${t("calculatorPage.deliveryOptions." + deliveryMode)}: ${money(estimate.deliveryCost)}` : "",
+      ].filter(Boolean).join(" · ") || t("calculatorPage.estimate.noExtras"),
+      value: money(estimate.extrasCost),
+    },
+    {
+      label: t("calculatorPage.estimate.installation"),
+      detail: includeInstallation ? t("calculatorPage.estimate.installationNote") : t("calculatorPage.estimate.notIncluded"),
+      value: money(estimate.installationCost),
+    },
   ];
   const recommendationVariant = area >= 120 ? "largeArea" : "default";
 
@@ -162,6 +204,9 @@ export default function CalculatorPage() {
                 <h2 className="text-xl font-black">{t("calculatorPage.inputsTitle")}</h2>
               </div>
             </div>
+            <p className="mb-5 rounded-lg bg-orange-500/[0.07] px-4 py-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+              {t("calculatorPage.beginnerNote")}
+            </p>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="grid gap-2">
@@ -171,7 +216,8 @@ export default function CalculatorPage() {
                   <input
                     className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-14 text-sm font-bold outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
                     min={1}
-                    onChange={(event) => setArea(Number(event.target.value) || 1)}
+                    max={5000}
+                    onChange={(event) => setArea(Math.min(5000, Math.max(1, Number(event.target.value) || 1)))}
                     type="number"
                     value={area}
                   />
@@ -184,10 +230,23 @@ export default function CalculatorPage() {
                 <input
                   className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
                   min={1}
-                  onChange={(event) => setWindows(Number(event.target.value) || 1)}
+                  max={100}
+                  onChange={(event) => setWindows(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
                   type="number"
-                  value={windows}
+                  value={windows ?? estimatedWindows}
                 />
+                <span className="text-xs leading-5 text-zinc-500">
+                  {windows === null ? t("calculatorPage.windowsEstimate", { windows: estimatedWindows }) : t("calculatorPage.windowsNote")}
+                </span>
+                {windows !== null && (
+                  <button
+                    className="justify-self-start text-xs font-bold text-orange-600 hover:underline dark:text-orange-400"
+                    onClick={() => setWindows(null)}
+                    type="button"
+                  >
+                    {t("calculatorPage.resetWindows")}
+                  </button>
+                )}
               </label>
 
               <div className="grid gap-2 md:col-span-2">
@@ -206,7 +265,7 @@ export default function CalculatorPage() {
                     >
                       <span className="block text-lg font-black">{height} m</span>
                       <span className="mt-1 block text-xs text-zinc-500">
-                        {height > 2.8 ? "x1.15" : "x1.00"}
+                        x{(height / 2.8).toFixed(2)}
                       </span>
                     </button>
                   ))}
@@ -235,15 +294,81 @@ export default function CalculatorPage() {
                   ))}
                 </div>
               </div>
+
+              <label className="grid gap-2 md:col-span-2">
+                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{t("calculatorPage.heatSource")}</span>
+                <select
+                  className="h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "none" || value === "gas" || value === "electric" || value === "solidFuel") {
+                      setHeatingSource(value);
+                    }
+                  }}
+                  value={heatingSource}
+                >
+                  {(["none", "gas", "electric", "solidFuel"] as const).map((source) => (
+                    <option key={source} value={source}>{t(`calculatorPage.sources.${source}`)}</option>
+                  ))}
+                </select>
+                <span className="text-xs leading-5 text-zinc-500">{t("calculatorPage.boilerNote")}</span>
+              </label>
+
+              <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+                {(heatingSource === "gas" || heatingSource === "solidFuel") && (
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                    <input
+                      checked={includeChimney}
+                      className="mt-1 size-4 accent-orange-500"
+                      onChange={(event) => setIncludeChimney(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>
+                      <span className="block text-sm font-black">{t("calculatorPage.options.chimney")}</span>
+                      <span className="mt-1 block text-xs leading-5 text-zinc-500">{t("calculatorPage.options.chimneyNote")}</span>
+                    </span>
+                  </label>
+                )}
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                  <input
+                    checked={includeUnderfloor}
+                    className="mt-1 size-4 accent-orange-500"
+                    onChange={(event) => setIncludeUnderfloor(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="block text-sm font-black">{t("calculatorPage.options.underfloor")}</span>
+                    <span className="mt-1 block text-xs leading-5 text-zinc-500">{t("calculatorPage.options.underfloorNote")}</span>
+                  </span>
+                </label>
+              </div>
+
+              <label className="grid gap-2 md:col-span-2">
+                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{t("calculatorPage.delivery")}</span>
+                <select
+                  className="h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "none" || value === "bishkek" || value === "region") {
+                      setDeliveryMode(value);
+                    }
+                  }}
+                  value={deliveryMode}
+                >
+                  {(["none", "bishkek", "region"] as const).map((mode) => (
+                    <option key={mode} value={mode}>{t(`calculatorPage.deliveryOptions.${mode}`)}</option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="mt-6 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-3">
               <div>
                 <p className="flex items-center gap-2 text-xs font-black uppercase text-zinc-500">
                   <ThermometerSun size={15} aria-hidden />
-                  {t("calculatorPage.cards.power")}
+                  {t("calculatorPage.estimate.recommendedBoiler")}
                 </p>
-                <p className="mt-2 text-2xl font-black">{estimate.totalKilowatts.toFixed(2)} kW</p>
+                <p className="mt-2 text-2xl font-black">{estimate.recommendedBoilerKilowatts} kW</p>
               </div>
               <div>
                 <p className="flex items-center gap-2 text-xs font-black uppercase text-zinc-500">
@@ -290,44 +415,80 @@ export default function CalculatorPage() {
                 }}
                 i18nKey={`calculatorPage.recommendation.${recommendationVariant}`}
                 values={{
-                  area: Math.max(1, area),
+                  area: estimate.area,
                   sectionsPerWindow: estimate.sectionsPerRadiator,
                   totalSections: estimate.totalSections,
-                  windows: estimate.radiatorCount,
+                  windows: estimate.windows,
                 }}
               />
             </div>
 
             <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-950">
-              {breakdownRows.map(([label, value]) => (
-                <div className="flex items-center justify-between gap-4 px-4 py-4 text-sm" key={label}>
+              {breakdownRows.map(({ label, detail, value }) => (
+                <div className="flex items-start justify-between gap-4 px-4 py-4 text-sm" key={label}>
                   <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
-                  <span className="text-right font-black">{value}</span>
+                  <span className="max-w-[62%] text-right">
+                    <span className="block font-black">{value}</span>
+                    <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">{detail}</span>
+                  </span>
                 </div>
               ))}
             </div>
 
             <div className="mt-5">
-              <p className="text-xs font-black uppercase text-zinc-500">{t("calculatorPage.estimate.grandTotal")}</p>
-              <p className="mt-2 text-3xl font-bold text-orange-500">{formatMoney(estimate.grandTotal)} KGS</p>
+              <p className="rounded-lg bg-zinc-100 p-3 text-xs leading-5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                {t("calculatorPage.estimate.disclaimer")}
+              </p>
+              <p className="mt-4 text-xs font-black uppercase text-zinc-500">{t("calculatorPage.estimate.grandTotal")}</p>
+              <p className="mt-2 text-3xl font-bold text-orange-500">{money(estimate.grandTotal)}</p>
             </div>
 
-            <form className="mt-5 grid gap-3" onSubmit={sendEstimate}>
+            <form className="mt-5 grid gap-3" noValidate onSubmit={sendEstimate}>
               <input
-                className="h-12 rounded-xl border border-zinc-200 bg-white px-4 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
-                onChange={(event) => setContactName(event.target.value)}
+                aria-describedby={nameError ? "calculator-name-error" : undefined}
+                aria-invalid={Boolean(nameError)}
+                aria-label={t("calculatorPage.estimate.name")}
+                className={`h-12 rounded-xl border bg-white px-4 text-sm outline-none transition focus:ring-2 dark:bg-zinc-950 ${
+                  nameError
+                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                    : "border-zinc-200 focus:border-orange-500 focus:ring-orange-500 dark:border-zinc-800"
+                }`}
+                onBlur={() => setNameError(contactName.trim() ? "" : t("calculatorPage.estimate.nameRequired"))}
+                onChange={(event) => {
+                  setContactName(event.target.value);
+                  if (event.target.value.trim()) setNameError("");
+                  setSubmitStatus("idle");
+                }}
                 placeholder={t("calculatorPage.estimate.name")}
+                required
                 value={contactName}
               />
+              {nameError && <p className="text-sm text-red-600" id="calculator-name-error">{nameError}</p>}
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                 <input
-                  className="h-12 w-full rounded-xl border border-zinc-200 bg-white pl-10 pr-4 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500 dark:border-zinc-800 dark:bg-zinc-950"
-                  onChange={(event) => setContactPhone(event.target.value)}
+                  aria-describedby={phoneError ? "calculator-phone-error" : undefined}
+                  aria-invalid={Boolean(phoneError)}
+                  aria-label={t("calculatorPage.estimate.phone")}
+                  autoComplete="tel"
+                  className={`h-12 w-full rounded-xl border bg-white pl-10 pr-4 text-sm outline-none transition focus:ring-2 dark:bg-zinc-950 ${
+                    phoneError
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                      : "border-zinc-200 focus:border-orange-500 focus:ring-orange-500 dark:border-zinc-800"
+                  }`}
+                  onBlur={() => setPhoneError(validatePhone(contactPhone))}
+                  onChange={(event) => {
+                    setContactPhone(event.target.value);
+                    setPhoneError(event.target.value.trim() ? validatePhone(event.target.value) : "");
+                    setSubmitStatus("idle");
+                  }}
                   placeholder={t("calculatorPage.estimate.phone")}
+                  required
+                  type="tel"
                   value={contactPhone}
                 />
               </div>
+              {phoneError && <p className="text-sm text-red-600" id="calculator-phone-error">{phoneError}</p>}
 
               <button
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 font-medium text-white transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
@@ -340,13 +501,13 @@ export default function CalculatorPage() {
             </form>
 
             {submitStatus === "success" && (
-              <p className="mt-3 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2 text-sm font-bold text-green-700 dark:text-green-300">
+              <p className="mt-3 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2 text-sm font-bold text-green-700 dark:text-green-300" role="status">
                 {t("calculatorPage.estimate.success")}
               </p>
             )}
             {submitStatus === "error" && (
-              <p className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-700 dark:text-red-300">
-                {t("calculatorPage.estimate.error")}
+              <p className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-700 dark:text-red-300" role="alert">
+                {submitError || t("calculatorPage.estimate.error")}
               </p>
             )}
           </motion.aside>
