@@ -21,16 +21,25 @@ function cleanEnvValue(value: string | undefined) {
   return value?.trim().replace(/^["']|["']$/g, "").trim() ?? "";
 }
 
-function describeCredential(variable: string, value: string, visibleChars = 0) {
-  const prefix = value.slice(0, visibleChars);
-
+function describeCredential(variable: string, value: string) {
   return {
     variable,
     source: "process.env (Next.js-resolved)",
     present: Boolean(value),
     length: value.length,
-    ...(visibleChars ? { prefix } : {}),
   };
+}
+
+function describeChatId(chatId: string, token: string) {
+  const botId = token.split(":", 1)[0];
+  const diagnostics = {
+    length: chatId.length,
+    isSameAsBotId: Boolean(botId && chatId === botId),
+  };
+
+  return chatId.length > 4
+    ? { ...diagnostics, firstTwo: chatId.slice(0, 2), lastTwo: chatId.slice(-2) }
+    : diagnostics;
 }
 
 export async function POST(req: Request) {
@@ -53,8 +62,11 @@ export async function POST(req: Request) {
   console.info(`Telegram API: resolved configuration ${JSON.stringify({
     cwd: process.cwd(),
     envResolution: "Next.js: pre-set process.env > .env.development.local > .env.local > .env.development > .env",
-    token: describeCredential("TELEGRAM_BOT_TOKEN", token, 6),
-    chatId: describeCredential("TELEGRAM_CHAT_ID", chatId, 2),
+    token: describeCredential("TELEGRAM_BOT_TOKEN", token),
+    chatId: {
+      ...describeCredential("TELEGRAM_CHAT_ID", chatId),
+      ...describeChatId(chatId, token),
+    },
   })}`);
   const missingVariables = [
     !token && "TELEGRAM_BOT_TOKEN",
@@ -101,6 +113,19 @@ export async function POST(req: Request) {
     );
   }
 
+  const chatIdDiagnostics = describeChatId(chatId, token);
+  if (chatIdDiagnostics.isSameAsBotId) {
+    console.error("Telegram API: refusing to send a message to the bot itself", chatIdDiagnostics);
+    return Response.json(
+      {
+        success: false,
+        error: "TELEGRAM_CHAT_ID совпадает с ID бота. Укажите ID чата получателя или группы.",
+        code: "TELEGRAM_CHAT_ID_IS_BOT_ID",
+      },
+      { status: 503 },
+    );
+  }
+
   const name = asText(payload.name, "Не указано");
   const phone = asText(payload.phone, "Не указано");
   const requestType = asText(payload.type, "Заявка");
@@ -125,6 +150,7 @@ export async function POST(req: Request) {
 
   let telegramResponse: Response;
   try {
+    console.info("Telegram API: sending message", chatIdDiagnostics);
     telegramResponse = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

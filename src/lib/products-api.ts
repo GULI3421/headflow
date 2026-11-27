@@ -60,6 +60,7 @@ type CartProductList = {
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
+    cache: "no-store",
     ...init,
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),

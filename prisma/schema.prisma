@@ -16,14 +16,17 @@ enum OrderStatus {
   NEW
   IN_PROGRESS
   COMPLETED
+  CANCELLED
 }
 
 type OrderItem {
-  name      String
-  variant   String?
-  quantity  Int
-  unitPrice Float
-  lineTotal Float
+  productId         String?
+  inventoryDeducted Int?
+  name              String
+  variant           String?
+  quantity          Int
+  unitPrice         Float
+  lineTotal         Float
 }
 
 model Category {

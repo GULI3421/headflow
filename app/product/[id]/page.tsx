@@ -65,7 +65,9 @@ export default function ProductDetailPage() {
 
         setProduct(response);
         setMappedProduct(mapProduct(response, "ru"));
-        setSelectedVariantPower(Array.isArray(response.powerVariants) && response.powerVariants.length ? response.powerVariants[0].power : "");
+        const variants = Array.isArray(response.powerVariants) ? response.powerVariants : [];
+        const defaultVariant = variants.find((variant) => variant.stockQuantity > 0) ?? variants[0];
+        setSelectedVariantPower(defaultVariant?.power ?? "");
 
         try {
           const relatedData = await listRelatedProductDocuments(response.category ?? "", response.id, 8);

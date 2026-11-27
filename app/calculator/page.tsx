@@ -11,6 +11,7 @@ import {
   type HeatingSource,
   type InsulationLevel,
 } from "@/lib/heating-estimate";
+import { PhoneSuggestionInput, rememberPhoneSuggestion } from "@/components/phone-suggestion-input";
 import { normalizePhone, validatePhone } from "@/lib/phone";
 import "@/src/i18n/config";
 
@@ -118,6 +119,7 @@ export default function CalculatorPage() {
         throw new Error(errorMessage || t("calculatorPage.estimate.error"));
       }
 
+      rememberPhoneSuggestion(phone);
       setSubmitStatus("success");
     } catch (error) {
       console.error("Failed to send calculator estimate", error);
@@ -466,7 +468,7 @@ export default function CalculatorPage() {
               {nameError && <p className="text-sm text-red-600" id="calculator-name-error">{nameError}</p>}
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                <input
+                <PhoneSuggestionInput
                   aria-describedby={phoneError ? "calculator-phone-error" : undefined}
                   aria-invalid={Boolean(phoneError)}
                   aria-label={t("calculatorPage.estimate.phone")}
@@ -476,15 +478,14 @@ export default function CalculatorPage() {
                       ? "border-red-500 focus:border-red-500 focus:ring-red-500"
                       : "border-zinc-200 focus:border-orange-500 focus:ring-orange-500 dark:border-zinc-800"
                   }`}
-                  onBlur={() => setPhoneError(validatePhone(contactPhone))}
-                  onChange={(event) => {
-                    setContactPhone(event.target.value);
-                    setPhoneError(event.target.value.trim() ? validatePhone(event.target.value) : "");
+                  onChange={(value) => {
+                    setContactPhone(value);
+                    setPhoneError(value.trim() ? validatePhone(value) : "");
                     setSubmitStatus("idle");
                   }}
+                  onBlur={() => setPhoneError(validatePhone(contactPhone))}
                   placeholder={t("calculatorPage.estimate.phone")}
                   required
-                  type="tel"
                   value={contactPhone}
                 />
               </div>

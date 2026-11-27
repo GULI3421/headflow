@@ -55,6 +55,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  let phase = "request validation";
   try {
     const body: unknown = await request.json();
     if (!isRecord(body)) throw new InvalidOrderError("Некорректные данные заказа.");
@@ -62,6 +63,9 @@ export async function POST(request: Request) {
     const orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
     const customerPhone = typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
+    if (body.customerComment !== undefined && body.customerComment !== null && typeof body.customerComment !== "string") {
+      throw new InvalidOrderError("Комментарий к заказу должен быть текстом.");
+    }
     const customerComment = typeof body.customerComment === "string" ? body.customerComment.trim() : "";
 
     if (!/^[A-Z0-9-]{6,64}$/i.test(orderNumber)) {
@@ -98,6 +102,7 @@ export async function POST(request: Request) {
       return { productId, variant, quantity };
     });
     const productIds = [...new Set(rawItems.map((item) => item.productId))];
+    phase = "product lookup";
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
       select: { id: true, title_ru: true, price: true, powerVariants: true },
@@ -112,7 +117,7 @@ export async function POST(request: Request) {
         throw new InvalidOrderError(`Вариант «${variant}» товара «${product.title_ru}» больше недоступен.`);
       }
 
-      const name = product.title_ru.trim();
+      const name = typeof product.title_ru === "string" ? product.title_ru.trim() : "";
       const unitPrice = selectedVariant?.price ?? product.price;
       if (!name || name.length > 300 || !Number.isFinite(unitPrice) || unitPrice < 0) {
         throw new InvalidOrderError("У товара указана некорректная цена или название.");
@@ -126,6 +131,7 @@ export async function POST(request: Request) {
     const totalAmount = items.reduce((total, item) => total + item.lineTotal, 0);
     if (!Number.isFinite(totalAmount)) throw new InvalidOrderError("Итоговая сумма заказа слишком велика.");
 
+    phase = "order creation";
     const order = await prisma.order.create({
       data: {
         orderNumber,
@@ -153,13 +159,25 @@ export async function POST(request: Request) {
       },
     }, { status: 201 });
   } catch (error) {
-    if (error instanceof InvalidOrderError || error instanceof SyntaxError) {
+    if (error instanceof InvalidOrderError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: "Тело запроса содержит некорректный JSON." }, { status: 400 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json({ error: "Заказ с таким номером уже существует. Попробуйте оформить его ещё раз." }, { status: 409 });
     }
-    console.error("Failed to save order", error);
-    return NextResponse.json({ error: "Не удалось сохранить заказ. Корзина не очищена, попробуйте ещё раз." }, { status: 500 });
+    const errorDetails = error instanceof Error ? error.message : String(error);
+    const errorCode = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;
+    console.error("Failed to save order", { phase, error });
+    return NextResponse.json({
+      error: "Не удалось сохранить заказ. Корзина не очищена, попробуйте ещё раз.",
+      ...(process.env.NODE_ENV === "development" && {
+        details: errorDetails,
+        phase,
+        ...(errorCode ? { code: errorCode } : {}),
+      }),
+    }, { status: 500 });
   }
 }

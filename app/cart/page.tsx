@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { getProductImageUrl } from "@/src/lib/appwrite";
+import { PhoneSuggestionInput, rememberPhoneSuggestion } from "@/components/phone-suggestion-input";
 import { normalizePhone, validatePhone } from "@/lib/phone";
 import type { OrderPdfData } from "@/lib/order-pdf";
 import { listCartProductDocuments, type CartProductDocument } from "@/src/lib/products-api";
@@ -17,6 +18,45 @@ type HydratedCartItem = {
   variantPower?: string;
   productData: CartProductDocument;
 };
+
+type SavedOrderLine = {
+  name: string;
+  variant: string | null;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+};
+
+type SavedOrder = {
+  createdAt: string;
+  items: SavedOrderLine[];
+  totalAmount: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSavedOrderLine(value: unknown): value is SavedOrderLine {
+  return isRecord(value)
+    && typeof value.name === "string"
+    && (typeof value.variant === "string" || value.variant === null)
+    && typeof value.quantity === "number"
+    && Number.isInteger(value.quantity)
+    && typeof value.unitPrice === "number"
+    && Number.isFinite(value.unitPrice)
+    && typeof value.lineTotal === "number"
+    && Number.isFinite(value.lineTotal);
+}
+
+function isSavedOrder(value: unknown): value is SavedOrder {
+  return isRecord(value)
+    && typeof value.createdAt === "string"
+    && typeof value.totalAmount === "number"
+    && Number.isFinite(value.totalAmount)
+    && Array.isArray(value.items)
+    && value.items.every(isSavedOrderLine);
+}
 
 function productTitle(product: CartProductDocument, language: string, fallback: string) {
   if (language.startsWith("ky")) {
@@ -61,6 +101,7 @@ export default function CartPage() {
   const [orderError, setOrderError] = useState("");
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const cartProductIdentity = useMemo(
     () => JSON.stringify(cartItems.map((item) => [item.id, item.productId ?? item.id, item.variantPower ?? null])),
     [cartItems],
@@ -102,9 +143,10 @@ export default function CartPage() {
         const combined = itemsToLoad
           .map((cartRecord) => {
             const matched = response.documents.find((document) => document.id === (cartRecord.productId ?? cartRecord.id));
+            const variants = matched?.powerVariants ?? [];
             const variant = cartRecord.variantPower
-              ? matched?.powerVariants?.find((item) => item.power === cartRecord.variantPower)
-              : undefined;
+              ? variants.find((item) => item.power === cartRecord.variantPower)
+              : variants.find((item) => item.stockQuantity > 0) ?? variants[0];
 
             return matched
               ? {
@@ -162,9 +204,27 @@ export default function CartPage() {
   const hydratedItems = useMemo(
     () => cartItems.flatMap((item) => {
       const productData = productDataByCartId[item.id];
-      return productData
-        ? [{ id: item.id, quantity: item.quantity, variantPower: item.variantPower, productData }]
-        : [];
+      if (!productData) return [];
+
+      const variants = productData.powerVariants ?? [];
+      const selectedVariant = item.variantPower
+        ? variants.find((variant) => variant.power === item.variantPower)
+        : variants.find((variant) => variant.stockQuantity > 0) ?? variants[0];
+
+      return [{
+        id: item.id,
+        quantity: item.quantity,
+        variantPower: item.variantPower ?? selectedVariant?.power,
+        productData: selectedVariant
+          ? {
+              ...productData,
+              price: selectedVariant.price,
+              oldPrice: selectedVariant.oldPrice,
+              old_price: selectedVariant.oldPrice,
+              stockQuantity: selectedVariant.stockQuantity,
+            }
+          : productData,
+      }];
     }),
     [cartItems, productDataByCartId],
   );
@@ -174,7 +234,6 @@ export default function CartPage() {
     [hydratedItems],
   );
   const phoneError = phoneTouched || phone.length > 0 ? validatePhone(phone) : "";
-  const phoneIsValid = validatePhone(phone) === "";
 
   function retryCartProducts() {
     setProductDataByCartId({});
@@ -197,47 +256,78 @@ export default function CartPage() {
     removeCartItem(id);
   }
 
-  async function handleWhatsAppSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting || hydratedItems.length === 0) return;
-    if (cartLoadError || hydratedItems.length !== cartItems.length) return;
-
-    setPhoneTouched(true);
-    if (validatePhone(phone)) return;
-    const normalizedPhone = normalizePhone(phone);
-    const whatsappWindow = window.open("about:blank", "_blank");
-
-    const createdAt = new Date();
-    const orderDate = new Intl.DateTimeFormat("sv-SE", {
-      timeZone: "Asia/Bishkek",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(createdAt).replaceAll("-", "");
-    const orderNumber = `CO-${orderDate}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-    let order: OrderPdfData = {
-      orderNumber,
-      createdAt: createdAt.toISOString(),
-      customerName: name.trim(),
-      customerPhone: normalizedPhone,
-      customerComment: comment.trim(),
-      items: hydratedItems.map((item) => {
-        const unitPrice = productPrice(item.productData);
-        return {
-          name: item.productData.title_ru || productTitle(item.productData, "ru", t("cartPage.fallbackProduct")),
-          variant: item.variantPower,
-          quantity: item.quantity,
-          unitPrice,
-          lineTotal: unitPrice * item.quantity,
-        };
-      }),
-      total,
-    };
-    setPdfError("");
+  async function submitOrder() {
+    if (submittingRef.current || submitting || pdfDownloading) return;
     setOrderError("");
-    setSubmitting(true);
+    setPdfError("");
+    setPhoneTouched(true);
+    const customerName = name.trim();
+    if (!customerName) {
+      setOrderError(t("cartPage.nameRequired"));
+      return;
+    }
+    if (customerName.length > 200) {
+      setOrderError(t("cartPage.nameTooLong"));
+      return;
+    }
+    const validationError = validatePhone(phone);
+    if (validationError) {
+      setOrderError(validationError);
+      return;
+    }
+    if (cartLoadError) {
+      setOrderError(cartLoadError);
+      return;
+    }
+    if (
+      hydratedItems.length === 0
+      || hydratedItems.length !== cartItems.length
+      || hydratedItems.length > 100
+      || hydratedItems.some((item) =>
+        !/^[\da-f]{24}$/i.test(item.productData.id)
+        || !Number.isInteger(item.quantity)
+        || item.quantity < 1
+        || item.quantity > 100000,
+      )
+    ) {
+      setOrderError(t("cartPage.invalidItems"));
+      return;
+    }
 
+    const normalizedPhone = normalizePhone(phone);
+    submittingRef.current = true;
+    setSubmitting(true);
+    let whatsappWindow: Window | null = null;
+    let orderSaved = false;
     try {
+      whatsappWindow = window.open("about:blank", "_blank");
+      const createdAt = new Date();
+      const orderDate = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Asia/Bishkek",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(createdAt).replaceAll("-", "");
+      const orderNumber = `CO-${orderDate}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+      const order: OrderPdfData = {
+        orderNumber,
+        createdAt: createdAt.toISOString(),
+        customerName,
+        customerPhone: normalizedPhone,
+        customerComment: comment.trim(),
+        items: hydratedItems.map((item) => {
+          const unitPrice = productPrice(item.productData);
+          return {
+            name: item.productData.title_ru || productTitle(item.productData, "ru", t("cartPage.fallbackProduct")),
+            variant: item.variantPower,
+            quantity: item.quantity,
+            unitPrice,
+            lineTotal: unitPrice * item.quantity,
+          };
+        }),
+        total,
+      };
+
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,91 +343,115 @@ export default function CartPage() {
           })),
         }),
       });
-      const result = await response.json() as {
-        order?: {
-          createdAt: string;
-          items: {
-            name: string;
-            variant: string | null;
-            quantity: number;
-            unitPrice: number;
-            lineTotal: number;
-          }[];
-          totalAmount: number;
-        };
-        error?: string;
-      };
-      if (!response.ok || !result.order) throw new Error(result.error || "Не удалось сохранить заказ.");
+      const responseText = await response.text();
+      const httpStatus = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+      let responseData: unknown;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        const bodyHint = responseText.trim().startsWith("<") ? "" : responseText.trim().slice(0, 200);
+        throw new Error(`${t("cartPage.invalidOrderResponse")} (${httpStatus})${bodyHint ? `: ${bodyHint}` : ""}`);
+      }
+
+      const result = isRecord(responseData) ? responseData : null;
+      const apiError = result
+        ? [result.error, result.details, typeof result.code === "string" ? `Код: ${result.code}` : ""]
+            .filter((part): part is string => typeof part === "string" && Boolean(part.trim()))
+            .join(" — ")
+        : "";
+      if (!response.ok || !isSavedOrder(result?.order)) {
+        throw new Error(`${apiError || t("cartPage.orderFailed")} (${httpStatus})`);
+      }
+
+      const savedOrderData = result.order;
       const savedOrder: OrderPdfData = {
         ...order,
-        createdAt: result.order.createdAt,
-        items: result.order.items.map(({ variant, ...item }) => ({
+        createdAt: savedOrderData.createdAt,
+        items: savedOrderData.items.map(({ variant, ...item }) => ({
           ...item,
           variant: variant ?? undefined,
         })),
-        total: result.order.totalAmount,
+        total: savedOrderData.totalAmount,
       };
+      orderSaved = true;
       setLastOrder(savedOrder);
-      order = savedOrder;
-    } catch (error) {
-      whatsappWindow?.close();
-      console.error("Не удалось сохранить заказ", error);
-      setOrderError(error instanceof Error ? error.message : "Не удалось сохранить заказ. Попробуйте ещё раз.");
-      setSubmitting(false);
-      return;
-    }
+      rememberPhoneSuggestion(savedOrder.customerPhone);
 
-    const itemsListText = hydratedItems
-      .map((item, index) => {
-        const savedItem = order.items[index];
-        const lineTotal = savedItem.lineTotal;
-        const title = productTitle(item.productData, language, t("cartPage.fallbackProduct"));
-        const variant = savedItem.variant ? ` · ${savedItem.variant}` : "";
-        return `${index + 1}. ${title}${variant} x ${savedItem.quantity} — ${lineTotal.toLocaleString("ru-RU")} KGS`;
-      })
-      .join("\n");
+      const itemsListText = hydratedItems
+        .map((item, index) => {
+          const savedItem = savedOrder.items[index];
+          const title = productTitle(item.productData, language, t("cartPage.fallbackProduct"));
+          const variant = savedItem.variant ? ` · ${savedItem.variant}` : "";
+          return `${index + 1}. ${title}${variant} x ${savedItem.quantity} — ${savedItem.lineTotal.toLocaleString("ru-RU")} KGS`;
+        })
+        .join("\n");
 
-    const message = t("cartPage.whatsappMessage", {
-      name,
-      phone: order.customerPhone,
-      items: itemsListText,
-      total: order.total.toLocaleString("ru-RU"),
-      orderNumber,
-      commentLine: comment.trim() ? `\n${t("cartPage.comment")}: ${comment.trim()}` : "",
-    });
-
-    const whatsappUrl = `https://wa.me/996708605281?text=${encodeURIComponent(message)}`;
-    if (whatsappWindow) {
-      whatsappWindow.location.href = whatsappUrl;
-    } else {
-      window.open(whatsappUrl, "_blank");
-    }
-
-    await handleDownloadOrderPdf(order);
-
-    try {
-      await fetch("/api/telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          phone: order.customerPhone,
-          message: [comment.trim(), `Номер заказа: ${orderNumber}`].filter(Boolean).join("\n"),
-          items: itemsListText,
-          total: order.total.toLocaleString("ru-RU"),
-          type: `${t("cartPage.telegramType")} № ${orderNumber}`,
-        }),
+      const message = t("cartPage.whatsappMessage", {
+        name: customerName,
+        phone: savedOrder.customerPhone,
+        items: itemsListText,
+        total: savedOrder.total.toLocaleString("ru-RU"),
+        orderNumber,
+        commentLine: comment.trim() ? `\n${t("cartPage.comment")}: ${comment.trim()}` : "",
       });
-    } catch (error) {
-      console.error("Failed to send Telegram order notification", error);
-    }
 
-    clearCart();
-    setName("");
-    setPhone("");
-    setPhoneTouched(false);
-    setComment("");
-    setSubmitting(false);
+      const whatsappUrl = `https://wa.me/996708605281?text=${encodeURIComponent(message)}`;
+      if (whatsappWindow) {
+        whatsappWindow.location.href = whatsappUrl;
+      } else {
+        window.open(whatsappUrl, "_blank");
+      }
+
+      await handleDownloadOrderPdf(savedOrder);
+
+      try {
+        const telegramResponse = await fetch("/api/telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: customerName,
+            phone: savedOrder.customerPhone,
+            message: [comment.trim(), `Номер заказа: ${orderNumber}`].filter(Boolean).join("\n"),
+            items: itemsListText,
+            total: savedOrder.total.toLocaleString("ru-RU"),
+            type: `${t("cartPage.telegramType")} № ${orderNumber}`,
+          }),
+        });
+        if (!telegramResponse.ok) {
+          console.error("Failed to send Telegram order notification", {
+            status: telegramResponse.status,
+            statusText: telegramResponse.statusText,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to send Telegram order notification", error);
+      }
+    } catch (error) {
+      console.error(orderSaved ? "Order saved but follow-up processing failed" : "Не удалось сохранить заказ", error);
+      if (!orderSaved) {
+        whatsappWindow?.close();
+        setOrderError(error instanceof Error ? error.message : t("cartPage.orderFailed"));
+      } else {
+        setOrderError(t("cartPage.postOrderError", {
+          reason: error instanceof Error ? error.message : t("cartPage.orderFailed"),
+        }));
+      }
+    } finally {
+      if (orderSaved) {
+        clearCart();
+        setName("");
+        setPhone("");
+        setPhoneTouched(false);
+        setComment("");
+      }
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  function handleWhatsAppSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitOrder();
   }
 
   async function handleDownloadOrderPdf(order: OrderPdfData) {
@@ -353,7 +467,8 @@ export default function CartPage() {
       await downloadOrderPdf(order);
     } catch (error) {
       console.error("Failed to download order PDF", error);
-      setPdfError(t("cartPage.pdfError"));
+      const reason = error instanceof Error ? error.message : t("cartPage.orderFailed");
+      setPdfError(`${t("cartPage.pdfError")} ${reason}`);
     } finally {
       setPdfDownloading(false);
     }
@@ -361,8 +476,8 @@ export default function CartPage() {
 
   if (loading && hydratedItems.length === 0) {
     return (
-      <div className="min-h-screen bg-white py-20 text-center text-zinc-950 dark:bg-black dark:text-white">
-        {t("cartPage.loading")}
+      <div aria-label="Loading cart" aria-live="polite" className="flex min-h-screen items-center justify-center bg-white py-20 text-zinc-950 dark:bg-black dark:text-white" role="status">
+        <Loader2 aria-hidden className="size-8 animate-spin text-orange-500" />
       </div>
     );
   }
@@ -382,6 +497,11 @@ export default function CartPage() {
                 {t("cartPage.orderReady", { orderNumber: lastOrder.orderNumber })}
               </p>
               <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{t("cartPage.pdfReadyNote")}</p>
+              {orderError && cartItems.length === 0 && (
+                <p role="alert" className="mt-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                  {orderError}
+                </p>
+              )}
             </div>
             <button
               className="rounded-lg bg-[#FF4F00] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
@@ -396,11 +516,6 @@ export default function CartPage() {
         {pdfError && (
           <p role="alert" className="mb-6 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
             {pdfError}
-          </p>
-        )}
-        {orderError && (
-          <p role="alert" className="mb-6 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
-            {orderError}
           </p>
         )}
         {cartLoadError && (
@@ -541,6 +656,7 @@ export default function CartPage() {
 
             <form
               className="h-fit space-y-6 rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-950"
+              noValidate
               onSubmit={handleWhatsAppSubmit}
             >
               <h2 className="border-b border-zinc-200 pb-3 text-xl font-bold dark:border-zinc-800">{t("cartPage.summary")}</h2>
@@ -561,24 +677,24 @@ export default function CartPage() {
                     className="h-12 rounded-xl border border-zinc-200 bg-white px-4 font-normal text-zinc-950 outline-none focus:border-orange-500 dark:border-zinc-800 dark:bg-black dark:text-white"
                     onChange={(event) => setName(event.target.value)}
                     placeholder={t("cartPage.namePlaceholder")}
-                    required
                     value={name}
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-bold">
                   {t("cartPage.phone")}
-                  <input
+                  <PhoneSuggestionInput
                     aria-describedby={phoneError ? "cart-phone-error" : undefined}
                     aria-invalid={Boolean(phoneError)}
+                    aria-label={t("cartPage.phone")}
+                    autoComplete="tel"
                     className={`h-12 rounded-xl border bg-white px-4 font-normal text-zinc-950 outline-none focus:border-orange-500 dark:bg-black dark:text-white ${
                       phoneError
                         ? "border-red-500 dark:border-red-500"
                         : "border-zinc-200 dark:border-zinc-800"
                     }`}
-                    onChange={(event) => setPhone(event.target.value)}
+                    onChange={setPhone}
                     onBlur={() => setPhoneTouched(true)}
                     placeholder={t("cartPage.phonePlaceholder")}
-                    type="tel"
                     value={phone}
                   />
                   {phoneError && (
@@ -600,11 +716,20 @@ export default function CartPage() {
 
               <button
                 className="w-full rounded-xl bg-orange-600 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
-                disabled={!phoneIsValid || submitting || pdfDownloading || loading || Boolean(cartLoadError) || hydratedItems.length !== cartItems.length}
+                disabled={submitting || pdfDownloading || loading || Boolean(cartLoadError) || hydratedItems.length !== cartItems.length}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void submitOrder();
+                }}
                 type="submit"
               >
                 {submitting ? t("cartPage.processing") : t("cartPage.submit")}
               </button>
+              {orderError && !(lastOrder && cartItems.length === 0) && (
+                <p role="alert" className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+                  {orderError}
+                </p>
+              )}
               <p className="text-center text-xs leading-5 text-zinc-500">{t("cartPage.note")}</p>
               <Link className="block text-center text-sm font-semibold text-orange-600 underline-offset-4 hover:underline dark:text-orange-400" href="/orders">
                 {t("cartPage.ordersLink")}

@@ -1,16 +1,3 @@
-const kyrgyzMobilePrefixes = new Set([
-  "500", "501", "502", "504", "505", "507", "508", "509",
-  "550", "551", "552", "553", "554", "555", "556", "557", "558", "559",
-  "700", "701", "702", "703", "704", "705", "706", "707", "708", "709",
-  "755",
-  "770", "771", "772", "773", "774", "775", "776", "777", "778", "779",
-  "800", "880", "990", "995", "996", "997", "998", "999",
-]);
-
-const kyrgyzRegionalPrefixes = new Set([
-  "312", "313", "322", "323", "342", "352", "353", "362", "365", "372", "374", "392", "393", "394",
-]);
-
 const countryCallingCodes = new Set(
   `1 7 20 27 30 31 32 33 34 36 39 40 41 43 44 45 46 47 48 49 51 52 53 54 55 56 57 58 60 61 62 63 64 65 66 81 82 84 86 90 91 92 93 94 95 98
   211 212 213 216 218 220 221 222 223 224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239 240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255 256 257 258 260 261 262 263 264 265 266 267 268 269 290 291 297 298 299
@@ -43,26 +30,6 @@ export function validatePhone(value: string) {
   if (digits.length < 8) return "Введите не менее 8 цифр.";
   if (digits.length > 15) return "Введите не более 15 цифр.";
   if (isRepeatedDigitSequence(digits)) return "Проверьте номер: он не может состоять из одинаковых цифр.";
-
-  if (digits.startsWith("996")) {
-    if (digits.length !== 12) {
-      return "Для Кыргызстана укажите 9 цифр после кода страны +996.";
-    }
-
-    const nationalNumber = digits.slice(3);
-    if (isRepeatedDigitSequence(nationalNumber)) {
-      return "Проверьте номер: он не может состоять из одинаковых цифр.";
-    }
-
-    const operatorOrAreaCode = nationalNumber.slice(0, 3);
-    if (!kyrgyzMobilePrefixes.has(operatorOrAreaCode) && !kyrgyzRegionalPrefixes.has(operatorOrAreaCode)) {
-      return "Укажите действующий код оператора или региона Кыргызстана после +996.";
-    }
-    if (isRepeatedDigitSequence(nationalNumber.slice(3))) {
-      return "Проверьте номер: он не может состоять из одинаковых цифр.";
-    }
-    return "";
-  }
 
   if (!hasPlus) {
     return "Для международного номера укажите код страны с «+», например +1... или +44....";

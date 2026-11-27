@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-type OrderStatus = "NEW" | "IN_PROGRESS" | "COMPLETED";
+import { getOrderPdfFilename } from "@/lib/order-pdf";
+type OrderStatus = "NEW" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 type AdminOrder = {
   id: string;
   orderNumber: string;
@@ -24,13 +25,14 @@ const statusLabels: Record<OrderStatus, string> = {
   NEW: "Новый",
   IN_PROGRESS: "В работе",
   COMPLETED: "Завершён",
+  CANCELLED: "Отменён",
 };
 
 function formatMoney(value: number) {
   return `${value.toLocaleString("ru-RU")} KGS`;
 }
 
-export function AdminOrdersPanel() {
+export function AdminOrdersPanel({ onInventoryUpdated }: { onInventoryUpdated: () => Promise<void> }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +92,9 @@ export function AdminOrdersPanel() {
       const updatedOrder = result.order;
       if (!response.ok || !updatedOrder) throw new Error(result.error || "Не удалось изменить статус заказа.");
       setOrders((current) => current.map((item) => item.id === order.id ? updatedOrder : item));
+      if ((order.status === "COMPLETED") !== (status === "COMPLETED")) {
+        await onInventoryUpdated();
+      }
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Не удалось изменить статус заказа.");
     } finally {
@@ -157,31 +162,15 @@ export function AdminOrdersPanel() {
         <div className="grid gap-4">
           {orders.map((order) => (
             <article className="rounded-xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#151515]" key={order.id}>
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-black/10 pb-4 dark:border-white/10">
-                <div>
-                  <h3 className="text-lg font-black">{order.orderNumber}</h3>
+              <div className="flex flex-col gap-4 border-b border-black/10 pb-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="break-all text-base font-black">{getOrderPdfFilename(order.orderNumber)}</h3>
                   <p className="mt-1 text-sm text-black/55 dark:text-white/55">
-                    {new Date(order.createdAt).toLocaleString("ru-RU")}
+                    Оформлен {new Date(order.createdAt).toLocaleString("ru-RU", { timeZone: "Asia/Bishkek" })}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="sr-only" htmlFor={`order-status-${order.id}`}>Статус заказа {order.orderNumber}</label>
-                  <select
-                    className="h-10 rounded-lg border border-black/10 bg-white px-3 text-sm font-semibold outline-none focus:border-[#FF4F00] dark:border-white/15 dark:bg-[#1d1d1d]"
-                    disabled={savingId === order.id}
-                    id={`order-status-${order.id}`}
-                    onChange={(event) => {
-                      const status = event.target.value;
-                      if (status === "NEW" || status === "IN_PROGRESS" || status === "COMPLETED") {
-                        void changeStatus(order, status);
-                      }
-                    }}
-                    value={order.status}
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
+                <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+                  <p className="text-lg font-black text-[#FF4F00]">{formatMoney(order.totalAmount)}</p>
                   <button
                     className="h-10 rounded-lg bg-[#FF4F00] px-4 text-sm font-bold text-white transition hover:bg-[#e64800] disabled:cursor-wait disabled:opacity-60"
                     disabled={downloadingId === order.id}
@@ -193,17 +182,40 @@ export function AdminOrdersPanel() {
                 </div>
               </div>
 
-              <div className="grid gap-4 border-b border-black/10 py-4 text-sm dark:border-white/10 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-black/45 dark:text-white/45">Клиент</p>
-                  <p className="mt-1 font-bold">{order.customerName}</p>
-                  <a className="mt-1 inline-block font-semibold text-[#d94300] hover:underline dark:text-[#ff7640]" href={`tel:${order.customerPhone}`}>
-                    {order.customerPhone}
-                  </a>
+              <div className="border-b border-black/10 py-4 dark:border-white/10">
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                  <label className="text-xs font-bold uppercase tracking-wide text-black/45 dark:text-white/45" htmlFor={`order-status-${order.id}`}>
+                    Статус заказа
+                  </label>
+                  <select
+                    className="h-10 rounded-lg border border-black/10 bg-white px-3 text-sm font-semibold outline-none focus:border-[#FF4F00] dark:border-white/15 dark:bg-[#1d1d1d]"
+                    disabled={savingId === order.id}
+                    id={`order-status-${order.id}`}
+                    onChange={(event) => {
+                      const status = event.target.value;
+                      if (status === "NEW" || status === "IN_PROGRESS" || status === "COMPLETED" || status === "CANCELLED") {
+                        void changeStatus(order, status);
+                      }
+                    }}
+                    value={order.status}
+                  >
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-black/45 dark:text-white/45">Комментарий / адрес</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">{order.customerComment || "Не указан"}</p>
+                <div className="grid gap-4 text-sm md:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-black/45 dark:text-white/45">Клиент</p>
+                    <p className="mt-1 font-bold">{order.customerName}</p>
+                    <a className="mt-1 inline-block font-semibold text-[#d94300] hover:underline dark:text-[#ff7640]" href={`tel:${order.customerPhone}`}>
+                      {order.customerPhone}
+                    </a>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-black/45 dark:text-white/45">Комментарий / адрес</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{order.customerComment || "Не указан"}</p>
+                  </div>
                 </div>
               </div>
 

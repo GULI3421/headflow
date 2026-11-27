@@ -970,7 +970,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {isOrdersPage && <AdminOrdersPanel />}
+        {isOrdersPage && <AdminOrdersPanel onInventoryUpdated={loadProducts} />}
 
         {isDashboard && <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
