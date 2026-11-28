@@ -18,6 +18,7 @@ import { useClientMounted } from "@/components/use-client-mounted";
 import { catalogCategories, subcategoryMap } from "@/lib/catalog";
 import { getStockStatus, LOW_STOCK_THRESHOLD } from "@/lib/stock-status";
 import { AdminOrdersPanel } from "./orders-panel";
+import { AdminCalculatorEstimatesPanel } from "./calculator-estimates-panel";
 
 type ProductImageFormItem = {
   id: string;
@@ -257,6 +258,7 @@ export default function AdminPage() {
   const isDashboard = pathname === "/admin";
   const isProductsPage = pathname === "/admin/products";
   const isOrdersPage = pathname === "/admin/orders";
+  const isCalculatorEstimatesPage = pathname === "/admin/calculator-estimates";
   const isPriceListPage = pathname === "/admin/price-list";
   const isProductFormPage = pathname === "/admin/products/new" || /^\/admin\/products\/[^/]+$/.test(pathname);
   const routeProductId = pathname.startsWith("/admin/products/") && pathname !== "/admin/products/new"
@@ -943,6 +945,7 @@ export default function AdminPage() {
             { href: "/admin", label: "Обзор", active: isDashboard },
             { href: "/admin/products", label: "Товары", active: isProductsPage || isProductFormPage },
             { href: "/admin/orders", label: "Заказы", active: isOrdersPage },
+            { href: "/admin/calculator-estimates", label: "Сметы калькулятора", active: isCalculatorEstimatesPage },
             { href: "/admin/price-list", label: "Прайс-лист", active: isPriceListPage },
           ].map(({ href, label, active }) => (
             <Link
@@ -971,6 +974,7 @@ export default function AdminPage() {
         )}
 
         {isOrdersPage && <AdminOrdersPanel onInventoryUpdated={loadProducts} />}
+        {isCalculatorEstimatesPage && <AdminCalculatorEstimatesPanel />}
 
         {isDashboard && <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">

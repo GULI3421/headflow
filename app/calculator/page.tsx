@@ -37,8 +37,9 @@ export default function CalculatorPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [nameError, setNameError] = useState("");
   const [phoneError, setPhoneError] = useState("");
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "partial" | "error">("idle");
   const [submitError, setSubmitError] = useState("");
+  const [submitNotice, setSubmitNotice] = useState("");
 
   const estimatedWindows = windows ?? Math.max(1, Math.ceil(area / 20));
   const estimate = useMemo(() => {
@@ -62,6 +63,7 @@ export default function CalculatorPage() {
     event.preventDefault();
     setSubmitStatus("idle");
     setSubmitError("");
+    setSubmitNotice("");
 
     const name = contactName.trim();
     const phoneValidationError = validatePhone(contactPhone);
@@ -72,55 +74,52 @@ export default function CalculatorPage() {
     const phone = normalizePhone(contactPhone);
     setSubmitStatus("loading");
 
-    const extraItems = [
-      estimate.chimneyCost ? `${t("calculatorPage.options.chimney")}: ${money(estimate.chimneyCost)}` : "",
-      estimate.underfloorCost ? `${t("calculatorPage.options.underfloor")}: ${money(estimate.underfloorCost)}` : "",
-      estimate.deliveryCost ? `${t(`calculatorPage.deliveryOptions.${deliveryMode}`)}: ${money(estimate.deliveryCost)}` : "",
-    ].filter(Boolean);
-    const items = [
-      `${t("calculatorPage.summary.area")}: ${estimate.area} m2`,
-      `${t("calculatorPage.summary.windows")}: ${estimate.windows}`,
-      `${t("calculatorPage.summary.ceiling")}: ${ceilingHeight} m`,
-      `${t("calculatorPage.summary.insulation")}: ${t(`calculatorPage.insulation.${insulation}.title`)}`,
-      `${t("calculatorPage.summary.power")}: ${estimate.heatLossWatts} W`,
-      `${t("calculatorPage.summary.boiler")}: ${t(`calculatorPage.sources.${heatingSource}`)} — ${estimate.recommendedBoilerKilowatts} kW (${money(estimate.boilerCost)})`,
-      `${t("calculatorPage.summary.radiators")}: ${estimate.windows} x ${estimate.sectionsPerRadiator} ${t("calculatorPage.units.sections")}, ${money(estimate.radiatorsCost)}`,
-      `${t("calculatorPage.summary.totalSections")}: ${estimate.totalSections}`,
-      `${t("calculatorPage.summary.pipes")}: ${estimate.pipeMeters} m, ${money(estimate.pipesCost)}`,
-      `${t("calculatorPage.summary.fittings")}: ${estimate.ballValves} ${t("calculatorPage.units.valves")}, ${estimate.brackets} ${t("calculatorPage.units.brackets")}, ${estimate.airVents} ${t("calculatorPage.units.mayevsky")}, ${money(estimate.accessoriesCost)}`,
-      `${t("calculatorPage.summary.extras")}: ${extraItems.join("; ") || t("calculatorPage.estimate.noExtras")} — ${money(estimate.extrasCost)}`,
-      `${t("calculatorPage.summary.installation")}: ${includeInstallation ? money(estimate.installationCost) : t("calculatorPage.estimate.notIncluded")}`,
-      `${t("calculatorPage.estimate.grandTotal")}: ${money(estimate.grandTotal)}`,
-    ].join("\n");
-
     try {
-      const response = await fetch("/api/telegram", {
+      const response = await fetch("/api/calculator-estimates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           phone,
-          items,
-          total: estimate.grandTotal,
-          type: t("calculatorPage.estimate.telegramType"),
+          parameters: {
+            area,
+            windows: estimatedWindows,
+            ceilingHeight,
+            insulation,
+            heatingSource,
+            includeChimney,
+            includeUnderfloor,
+            deliveryMode,
+            includeInstallation,
+          },
         }),
       });
 
-      if (!response.ok) {
-        let errorMessage = "";
-        try {
-          const result: unknown = await response.json();
-          if (typeof result === "object" && result !== null && "error" in result && typeof result.error === "string") {
-            errorMessage = result.error;
-          }
-        } catch {
-          // Use the localized fallback when the API response is not JSON.
-        }
-        throw new Error(errorMessage || t("calculatorPage.estimate.error"));
+      const result = await response.json() as {
+        saved?: boolean;
+        estimateId?: string;
+        telegramStatus?: "PENDING" | "SENT" | "FAILED";
+        message?: string;
+        error?: string;
+        details?: unknown;
+      };
+      if (!response.ok || !result.saved) {
+        const details = result.details === undefined ? "" : JSON.stringify(result.details, null, 2);
+        throw new Error([result.error || t("calculatorPage.estimate.error"), details].filter(Boolean).join("\n"));
       }
 
       rememberPhoneSuggestion(phone);
-      setSubmitStatus("success");
+      if (result.telegramStatus === "SENT") {
+        setSubmitNotice(
+          result.estimateId
+            ? `Смета №${result.estimateId} сохранена в базе и отправлена в Telegram.`
+            : t("calculatorPage.estimate.success"),
+        );
+        setSubmitStatus("success");
+      } else {
+        setSubmitError(result.message || "Смета сохранена, но статус уведомления в Telegram не подтверждён.");
+        setSubmitStatus("partial");
+      }
     } catch (error) {
       console.error("Failed to send calculator estimate", error);
       setSubmitError(
@@ -503,12 +502,17 @@ export default function CalculatorPage() {
 
             {submitStatus === "success" && (
               <p className="mt-3 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2 text-sm font-bold text-green-700 dark:text-green-300" role="status">
-                {t("calculatorPage.estimate.success")}
+                {submitNotice || t("calculatorPage.estimate.success")}
               </p>
             )}
             {submitStatus === "error" && (
-              <p className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-700 dark:text-red-300" role="alert">
+              <p className="mt-3 whitespace-pre-wrap break-words rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-700 dark:text-red-300" role="alert">
                 {submitError || t("calculatorPage.estimate.error")}
+              </p>
+            )}
+            {submitStatus === "partial" && (
+              <p className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm font-bold text-amber-800 dark:text-amber-300" role="status">
+                {submitError}
               </p>
             )}
           </motion.aside>

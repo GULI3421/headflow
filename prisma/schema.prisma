@@ -19,6 +19,19 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum CalculatorEstimateStatus {
+  NEW
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TelegramDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 type OrderItem {
   productId         String?
   inventoryDeducted Int?
@@ -112,6 +125,25 @@ model Order {
   @@index([createdAt])
   @@index([status, createdAt])
   @@map("orders")
+}
+
+model CalculatorEstimate {
+  id             String                   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  phone          String
+  totalAmount    Float
+  parameters     Json
+  breakdown      Json
+  status         CalculatorEstimateStatus @default(NEW)
+  telegramStatus TelegramDeliveryStatus   @default(PENDING)
+  telegramError  String?
+  telegramSentAt DateTime?
+  createdAt      DateTime                 @default(now())
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([telegramStatus, createdAt])
+  @@map("calculator_estimates")
 }
 
 model AdminUser {
